@@ -13,21 +13,23 @@ During the analysis of this experiment, we observed some data outliers that were
 
 ## Modifications made to the initial version
 
-1) Outlier detection in the curateRawLC package
+**1) Outlier detection in the curateRawLC package:**
 
-Initial version: detection of weight outliers by boxplot and negative values. 
+Initial version: detection of weight outliers by boxplot and negative values. However, if the LC contains a majority of upper outliers (e.g. 200 kg), the LC will not be removed.
+![image](https://github.com/lcmgregoire/UPDATE_KAR_PIPELINE_LEASYSCAN_EZTr/assets/96241863/8387dcdd-0f9f-481d-9167-305f35c00421)
 
 Current version: an expected weight parameter (avg_wgt) is defined by the user at the start of the pipeline. If the weight is outside a range of +/- 30% of this expected weight, it is considered an outlier.
 
 
-2) ETref calculation in calculateETref package
+**2) ETref calculation in calculateETref package:**
    
-**Initial version:** ETref values too large for the expected order of magnitude. Identification of a conversion problem in the initial version. In addition, calculation adapted to a 15 min interval.
+Initial version: ETref values too large for the expected order of magnitude. We identified a conversion problem in the initial version concerning the solar radiation. In addition, ETref calculation is adapted to a 15 min interval only.
 
-**Current version:** suitable for all measurement intervals (defined by the seq_by parameter).
+Current version: the conversion problem is fixed, and the ETref calculation is suitable for all measurement intervals (because it is defined by the seq_by parameter).
 
 
-5) PlantEye : 
+**3) PlantEye:** 
+
 Initial version: There is no visualization of leaf area data measured by the Plant Eye scanner to check whether the 3D-LA data used to calculate Tr and TRrate are consistent. However, Plant Eye can provide aberrant/missing data when plants have reached a certain phenological stage (barcode reading problems, overlapping, etc.). In this case, pearl millet crop )
 
 Current version: we propose here to visualize the 3D-LA data by graph, and the user removes by himself/herself the days he/she considers as outlier.
@@ -36,6 +38,7 @@ Current version: we propose here to visualize the 3D-LA data by graph, and the u
 
 Once the user has confirmed his choice, he can always correct it by looking at the plots of LAI per day/LAI per Timestamp or LA per Timestamp of each LC. (example here where Oct 10-11, 2023 were kept at first sight, then deleted when viewing the LAI/LA graphs).
 
+![1LAI_over_time](https://github.com/lcmgregoire/UPDATE_KAR_PIPELINE_LEASYSCAN_EZTr/assets/96241863/dbe12962-bca7-43f7-9ad1-3ae886a8430d)
 
 
 4) Management of missing LAI/LA data. 
