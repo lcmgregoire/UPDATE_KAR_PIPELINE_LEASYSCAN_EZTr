@@ -30,6 +30,7 @@ Current version: the conversion problem is fixed, and the ETref calculation is s
 
 **3) PlantEye:** 
 
+
 Initial version: There is no visualization of leaf area data measured by the Plant Eye scanner to check whether the 3D-LA data used to calculate Tr and TRrate are consistent. However, Plant Eye can provide aberrant/missing data when plants have reached a certain phenological stage (barcode reading problems, overlapping, etc.). In this case, pearl millet crop )
 
 Current version: we propose here to visualize the 3D-LA data by graph, and the user removes by himself/herself the days he/she considers as outlier.
@@ -41,7 +42,8 @@ Once the user has confirmed his choice, he can always correct it by looking at t
 ![1LAI_over_time](https://github.com/lcmgregoire/UPDATE_KAR_PIPELINE_LEASYSCAN_EZTr/assets/96241863/dbe12962-bca7-43f7-9ad1-3ae886a8430d)
 
 
-4) Management of missing LAI/LA data. 
+4) Management of missing LAI/LA data.
+
 Initial version: for missing LAI data (often at the end of the experiment), the pipeline calculates the median LAI on the days measured and assigns this value to all missing data. The problem is that this value is therefore lower than the last days measured, and that this value is a constant for the missing days. It therefore does not represent leaf growth.
 
 ![image](https://github.com/lcmgregoire/UPDATE_KAR_PIPELINE_LEASYSCAN_EZTr/assets/96241863/aad9c10c-d4f3-4714-9d10-55f18d8e8632)
