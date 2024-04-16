@@ -4,11 +4,8 @@ This project concerns an update of the pipeline described in the article :Kar, S
 
 Link GITHUB : https://github.com/KSoumya/EZTr
 
-The pipeline update comes from the analysis of exp60 data. 
-
-
 This script is based on the analysis of "Exp60" carried out at ICRISAT, Hyderabad, India, in September-October 2023. The measurement period is from September 27 to October 17, with 6 irrigation days removed. 
-Weight measurements (LC) are taken on a 15 min interval. The data are coupled with PlantEye data measuring 3D-LA leaf area twice a day, and planimeter data (observed LA) at the end of the trial. 
+Weight measurements (Loadcells measurements) and climate data are recorded on a 15 min interval. The data are coupled with PlantEye data measuring 3D-LA leaf area twice a day, and planimeter data (observed LA) at the end of the trial. 
 
 During the analysis of this experiment, we observed some data outliers that were not cleaned, and aberrants ETref values. We present below the modifications we made to the initial script, followed by some simple suggested improvements. 
 We also noticed that the pipeline was adapted to the specific case of the ICRISAT platform. A number of enhancements are envisaged as possible improvements (not yet present in the script) 
