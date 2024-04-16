@@ -3,22 +3,33 @@
 This project concerns an update of the pipeline described in the article :Kar, S., Tanaka, R., Korbu, L.B., Kholová, J., Iwata, H., Durbha, S.S., Adinarayana, J., Vadez, V., 2020. Automated discretization of 'transpiration restriction to increasing VPD' features from outdoors high-throughput phenotyping data. Plant Methods 16, 140. https://doi.org/10.1186/s13007-020-00680-8
 Link GITHUB : https://github.com/KSoumya/EZTr
 
+The pipeline update comes from the analysis of exp60 data. 
+
+
 This script is based on the analysis of "Exp60" carried out at ICRISAT, Hyderabad, India, in September-October 2023. The measurement period is from September 27 to October 17, with 6 irrigation days removed. 
 Weight measurements (LC) are taken on a 15 min interval. The data are coupled with PlantEye data measuring 3D-LA leaf area twice a day, and planimeter data (observed LA) at the end of the trial. 
-## CORRECTIONS
+
+During the analysis of this experiment, we observed some data outliers that were not cleaned, and aberrants ETref values. We present below the modifications we made to the initial script, followed by some simple suggested improvements. 
+We also noticed that the pipeline was adapted to the specific case of the ICRISAT platform. A number of enhancements are envisaged as possible improvements (not yet present in the script) 
+
+
+
+
+## Modifications made to the initial version
 During its use for the analysis of the Exp60 trial carried out at ICRISAT, certain errors were observed and some corrections were made to the original version: 
 
 1) Outlier detection in the curateRawLC package
+
 Initial version: detection of weight outliers by boxplot and negative values. 
 Current version: an expected weight parameter (avg_wgt) is defined by the user at the start of the pipeline. If the weight is outside a range of +/- 30% of this expected weight, it is considered an outlier.
 
 
-2) ETref calculation in calculateETref package
+3) ETref calculation in calculateETref package
 Initial version: ETref values too large for the expected order of magnitude. Identification of a conversion problem in the initial version. In addition, calculation adapted to a 15 min interval.
 Current version: suitable for all measurement intervals (defined by the seq_by parameter).
 
 
-3) PlantEye : 
+4) PlantEye : 
 Initial version: There is no visualization of leaf area data measured by the Plant Eye scanner to check whether the 3D-LA data used to calculate Tr and TRrate are consistent. However, Plant Eye can provide aberrant/missing data when plants have reached a certain phenological stage (barcode reading problems, overlapping, etc.). In this case, pearl millet crop )
 Current version: we propose here to visualize the 3D-LA data by graph, and the user removes by himself/herself the days he/she considers as outlier.
 
