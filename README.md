@@ -1,6 +1,7 @@
 # Update of Kar et al 2020 pipeline 
 
 This project concerns an update of the pipeline described in the article :Kar, S., Tanaka, R., Korbu, L.B., Kholová, J., Iwata, H., Durbha, S.S., Adinarayana, J., Vadez, V., 2020. Automated discretization of 'transpiration restriction to increasing VPD' features from outdoors high-throughput phenotyping data. Plant Methods 16, 140. https://doi.org/10.1186/s13007-020-00680-8
+
 Link GITHUB : https://github.com/KSoumya/EZTr
 
 The pipeline update comes from the analysis of exp60 data. 
