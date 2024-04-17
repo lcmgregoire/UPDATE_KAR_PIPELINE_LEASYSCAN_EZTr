@@ -140,7 +140,7 @@ The pipeline is adapted for Leasyscan platform in India for a few crops. We woul
   
 3) Conversion calculations from the 3D value estimated by PlantEye and the value observed on the planimeter.
    
-The equations to convert 3DLA in observed LA come from the article Vadez et al 2015. These equations are based on three crops: pearl millet, cowpea and peanut. In the initial version of the pipeline, the equation is correct in the case of pearl millet, incorrect in the other cases (cowpea and peanut). It would be wise to i) correct the equation for both crops, ii) make a loop so that the user can decide which crop corresponds best to his case, iii) In addition, it would be interesting to have more crops proposed in order to refine the relationship.
+The equations to convert 3DLA in observed LA come from the article Vadez et al 2015. These equations are based on three crops: pearl millet, cowpea and peanut. In the initial version of the pipeline, the equation is correct in the case of pearl millet, incorrect in the other cases (cowpea and peanut). It would be wise to i) correct the equation for both crops, ii) make a loop so that you can decide which crop corresponds best to yourcase, iii) In addition, it would be interesting to have more crops proposed in order to refine the relationship.
 
 4) ... 
 
