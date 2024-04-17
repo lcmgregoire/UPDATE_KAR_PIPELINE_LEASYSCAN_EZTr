@@ -197,7 +197,7 @@ opPATH.obj= "./saved_objects/"
 opPATH <- "./results/"
 opPATH.smth="./results/smthFeaturesTimeSeries/"
 opPATH.raw="./results/rawFeaturesTimeSeries/"
-opPATH.profile="./results/profile_example/"
+opPATH.profile="./results/profile/"
 opPATH.spats="./results/STAGENHTP/"
 
 #### Prepare the LC data and meta data
@@ -285,7 +285,7 @@ write.table(LC.MAT.raw, paste0(opPATH, "OP-1","_LCraw_wNA.csv"), sep = ";", row.
 ## STEP 4. Keep if 30% of values
 
 imputed.DF.final <- curateRawLC(x = LC.MAT.f, y = meta.LCDF, z= avg_wgt) ## +/- 30 % DONE
-# save(imputed.DF.final, file = paste(opPATH.obj, "imputed.DF.final.RData", sep = ""))
+save(imputed.DF.final, file = paste(opPATH.obj, "imputed.DF.final.RData", sep = ""))
 load(file = paste(opPATH.obj, "imputed.DF.final.RData", sep = ""))
 
 # Outliers detection post curateRawLC
@@ -341,9 +341,9 @@ ETr_Meta <- et.vals$obsETr_meta
 
 # Convert ETr in grams to mm (Y/N) # ## !! careful to put the Y or N in CAPITAL LETTER 
 ETr_F <- convETr(x = ETr_Meta, y = et.obs) ## AJOUTER UNE PARTIE ADAPTEE pour L'IRD (surface LC differente avec ICRISAT)
-# 
+ 
 save(ETr_F , file = paste(opPATH.obj,  "ETr_F.RData", sep = ""))
-# load(file = paste(opPATH.obj, "ETr_F.RData", sep = ""))
+load(file = paste(opPATH.obj, "ETr_F.RData", sep = ""))
 
 
 # #  Draw the profile of a LC  (weight/ETr) to follow the data cleaning process (2-ETr_F).
@@ -502,6 +502,8 @@ save(TS,file= paste(opPATH.obj, "TS.RData", sep = "") )
 LC= wthr.ETref.ETobs[9:nrow(wthr.ETref.ETobs),1]
 save(LC,file= paste(opPATH.obj, "LC.RData", sep = "") )
 metad_emptyrows= wthr.ETref.ETobs[,1:6]
+save(metad_emptyrows, file =  paste(opPATH.obj,"metad_emptyrows.RData", sep = ""))
+
 weather= wthr.ETref.ETobs[1:8,]
 save(weather, file =  paste(opPATH.obj,"weather.RData", sep = ""))
 
@@ -524,6 +526,8 @@ wthr.ETref.ETobs_ratio= t(ET_ratio_mat)
 ETr_smth_metad= cbind(metad_emptyrows, wthr.ETref.ETobs_ratio) ## ET filtered non normalized, with the expected format (wthr.ETref.ETobs format)
 
 save(ETr_smth_metad, file =  paste(opPATH.obj,"ETr_smth_metad.RData", sep = ""))
+load(file =  paste(opPATH.obj,"ETr_smth_metad.RData", sep = ""))
+
 write.table(ETr_smth_metad, paste0(opPATH, "ETr_smth_metad.csv"), sep = ";", row.names = F, dec = ".")
 
 # Outliers detection
@@ -575,7 +579,7 @@ plot<-
   ggplot(data =data, aes(TS, data[,2]))+
   ylab("ET mm.15min-1")+
   xlab("Timestamp")+
-  labs(title = paste("ET profile filtered",colnames(data)[1]))+
+  labs(title = paste("ETr profile filtered",colnames(data)[2]))+
   geom_point()+
   geom_line()+
   ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), date_breaks = "1 days")+
@@ -586,6 +590,8 @@ dev.off()
 
 
 ####### STAGE III: Process Plant Eye data with spatial correction ####### 
+## some inputs come from V. Garin work LS
+## https://github.com/ICRISAT-GEMS/platformDataAnalysis
 library("easypackages")
 
 libraries("dplyr","LoadCellDataProcessing", "statgenHTP", "platformDataAnalysis" , 
@@ -635,17 +641,27 @@ for (i in levels(pe_data$timeNumber)){
   Data$timestamp = Data$timestamp[1] ## ne mettre qu'un seul timestamp commun pour tout le numero de scan
   Data_unique= Data[!duplicated(Data$ID), ] ##
   
-  write.table(DF,file = "./DOUBLONS.csv", append = TRUE, col.names = FALSE, row.names = FALSE, sep = ";")
-  write.table(Data_unique,file = "./pe_data_unique.csv", append = TRUE, col.names = FALSE, row.names = FALSE, sep = ";")
+  write.table(DF,file = paste(opPATH,"DOUBLONS.csv", sep = ""), append = TRUE, col.names = FALSE, row.names = FALSE, sep = ";")
+  write.table(Data_unique,file = paste(opPATH,"pe_data_unique.csv", sep = ""), append = TRUE, col.names = FALSE, row.names = FALSE, sep = ";")
   
 }
 
-pe_data_unique= read.csv2("./pe_data_unique.csv", header = FALSE)
-colnames(pe_data_unique)=colnames(pe_data)
-pe_data_unique$timeNumber=as.factor(pe_data_unique$timeNumber)
+pe_data_unique= read.csv2(file = paste(opPATH,"pe_data_unique.csv", sep = ""), header = FALSE)
+colnames(pe_data_unique) = c("barcode",	"n",	"r",	"old_unit",	"unit",	"Line",	"Plot", "PlotId","genotype",	"g_alias",	"treatment",	"geno_trt","timestamp",	"timeNumber",
+                              "Digital_biomass"  ,"greenness.average","greenness.bin0" ,"greenness.bin1" ,         "greenness.bin2" ,"greenness.bin3",          "greenness.bin4" ,         "greenness.bin5"  ,        "Height"   , "Height.Max..mm.",    
+                           "hue.average..Â..",        "hue.bin0" ,               "hue.bin1"  ,              "hue.bin2"    ,            "hue.bin3",               
+                              "hue.bin4"  ,              "hue.bin5"    ,            "Leaf_angle"  ,            "Leaf_area"      ,         "Leaf_area_index",        
+                            "Leaf_area_projected" ,    "Leaf_inclination"  ,      "Light_penetration_depth", "NDVI.average",            "NDVI.bin0"    ,          
+                            "NDVI.bin1"  ,             "NDVI.bin2"  ,             "NDVI.bin3"    ,           "NDVI.bin4"  ,             "NDVI.bin5" ,             
+                             "NPCI.average" ,           "NPCI.bin0"  ,             "NPCI.bin1"   ,            "NPCI.bin2"   ,            "NPCI.bin3" ,             
+                           "NPCI.bin4"   ,            "NPCI.bin5"    ,           "PSRI.average"  ,          "PSRI.bin0"    ,           "PSRI.bin1"  ,            
+                             "PSRI.bin2"   ,            "PSRI.bin3"    ,           "PSRI.bin4"   ,            "PSRI.bin5" )
+pe_data_unique$timeNumber=as.numeric(pe_data_unique$timeNumber)
 pe_data=pe_data_unique
 rm(pe_data_unique)
-rm(Data_unique)
+
+##   plotId has to be unique within each time point for TP_PE : check
+
 
 
 
@@ -684,52 +700,34 @@ pe_data <- pe_data %>% select(timeNumber, timePoint, block, rowNum, colNum, plot
 # PE pipeline: remove tp with too high missing values
 pe_data$Leaf_area= as.numeric(pe_data$Leaf_area) 
 pe_data$timeNumber=as.numeric(pe_data$timeNumber)
-# pdf(file = paste(opPATH.spats, "Leaf_area_raw_values.pdf", sep = ""), width = 4,height = 4) 
-# plot =  ggplot(data =pe_data, aes(timeNumber, Leaf_area, colour = plotId))+
-#   ylab("Leaf area")+
-#   xlab("TimeNumber")+
-#   geom_point()+
-#   geom_line()
-# 
-# dev.off()
-#  
-### no missing values, aleready removed !
-# prop_non_miss <- timepoint_prop_non_missing(pe_data)
-# tp_rem <- names(prop_non_miss[prop_non_miss < 0.3])
-# if(length(tp_rem) > 0){
-#   pe_data <- pe_data[!(pe_data$timePoint %in% tp_rem), ]
-# } 
 
 
-
-# PE pipeline: remove outliers
-# 
-# pe_data <- outlier_boxplot_detect(pe_data)
-# 
-# plot_trend(data = pe_data, trait = "Height")
-plot_trend(data = pe_data, trait = "Leaf_area")
-# plot_trend(data = pe_data, trait = "Digital_biomass")
+pdf(file = paste(opPATH.profile, "3D_leaf_area_over_time.pdf", sep = ""), width = 4,height = 4)
+plot<-  plot_trend(data = pe_data, trait = "Leaf_area")
+print(plot)
+dev.off()
 
 # PE pipeline: trim the time series
 
 # remove days progressively the end of the exp until obtain a linear regression 
-
 sel_tp <- sort(unique(pe_data$timePoint)) # all timePoint in the TS
 sel_tp<-sel_tp[order(sel_tp)]
 sel_tp
 
 sel_tp <- sel_tp[-c(29:length(sel_tp))] # remove last days one by one, We decide to keep only the linear part at the start of the exp, until the "2023-10-11 ", where we see a inflexion point
-
+sel_tp 
 pe_data <- pe_data[pe_data$timePoint %in% sel_tp, ]
 
 save(pe_data,file = paste(opPATH.obj,"pe_data.RData", sep = ""))
 load(file = paste(opPATH.obj,"pe_data.RData", sep = ""))
 
-plot_trend(data = pe_data, trait = "Leaf_area") ## visualize to keep only the linear part at the start
+pdf(file = paste(opPATH.profile, "3D_leaf_area_over_time_rmd_out.pdf", sep = ""), width = 4,height = 4)
+plot =plot_trend(data = pe_data, trait = "Leaf_area") ## visualize to keep only the linear part at the start
+print(plot)
+dev.off()
 
 
 # PE pipeline: Creation of TP object
-
 TP_PE <- createTimePoints(dat = pe_data,
                           experimentName = "EXP60",
                           genotype = "genotype",
@@ -913,6 +911,7 @@ load(file = "./saved_objects/pe.df.ETr.RData")
 load(file = "./saved_objects/TS.RData")
 load(file = "./saved_objects/wthr.ETref.ETobs.RData")
 ETr_smoothFILE = ETr_Meta_ERRsec.rmvd
+save(ETr_smoothFILE, file = paste(opPATH.obj,"ETr_smoothFILE.RData", sep = ""))
 
 sel.secs <- unique(na.omit(ETr_smoothFILE$old_unit)) 
 length(sel.secs) 
@@ -938,7 +937,6 @@ LAI.all.dates <- LAI.all.dates[ , c(1:length(unq.dts))]
 colnames(LAI.all.dates) <- c(as.character(unq.dts.copy))
 
 
-# Calculate LAI value per day #
 ################################ 1. CALCUL LEAF AREA INDEX PER DAY    ################################ 
 #   objectives : 
 # - calculate the median of 3D PE, converted 3D-PE to observed LA with the relation of Vadez 2015  
@@ -991,6 +989,8 @@ LAI$X11.10.2023 = NA ## les données du 10 et 11 oct sont outliers dans certains
 colnames(LAI)[9:ncol(LAI)]= sub("X","",colnames(LAI)[9:ncol(LAI)])
 
 ## removed 38:10:01 and 38:10:02 (row 854 and 855) because there are just planimeter data (PE 3DLA are missing data) 
+LAI[854,1]
+LAI[855,1]
 LAI= LAI[-c(854, 855),]
 
 # add a day to unq.dts for planimeter data 
@@ -998,7 +998,7 @@ unq.dts=colnames(LAI)[9:ncol(LAI)]## there is still irrigation dates (22 days)
 unq.dts= dmy(unq.dts)
 length(unq.dts)
 date.mat <- data.frame(date = unq.dts, val = rep(NA, length(unq.dts))) ## create df with date, val (empty, length unique date)
-date.mat$date = dmy(date.mat$date)
+date.mat$date = ymd(date.mat$date)
 
 ### replace NA  with last measure +slope value of LAI over time
 for (i in 1:nrow(LAI)) {
@@ -1025,7 +1025,7 @@ TS= dmy(TS)
 save(LC, file = paste(opPATH.obj,"LC.RData", sep = ""))
 save(unq.dts, file =  paste(opPATH.obj,"unq.dts_for_LAI_values.RData"))
 save(LAI,  file = paste(opPATH.obj,"LAI_per_day.RData", sep = ""))
-write.csv2(LAI, file = "LAI_observed_converted3D_plani_estim.csv")
+write.table(LAI, file = paste(opPATH,"LAI_observed_converted3D_plani_estim.csv", sep = ""))
 
 
 max_df=as.data.frame(colMax(LAI[,9:ncol(LAI)])) 
@@ -1065,10 +1065,6 @@ i=2
 #   print(i)
 # }
 
-max_df=as.data.frame(colMax(LAI[,9:ncol(LAI)])) 
-max(max_df[1:nrow(max_df),]) 
-min_df=as.data.frame(colMin(LAI[,9:ncol(LAI)]))
-min(min_df[1:nrow(min_df),]) 
 save(LAI, file =  paste(opPATH.obj,"LAI_rmd_out.RData", sep = ""))
 
 ################################ 2. CALCUL LEAF AREA INDEX PER INTERVAL of 15 min    ################################ 
@@ -1076,8 +1072,8 @@ val_per_interval= data.frame(matrix(NA, nrow = nrow(LAI), ncol = ncol(LAI[9:ncol
 rownames(val_per_interval)=rownames(LAI)
 
 ## create TS all day
-start_seqby= ymd_hms(paste(dmy(unq.dts[1]),as.character("00:00:00")))
-end_seqby= ymd_hms(paste(dmy(unq.dts[length(unq.dts)]),as.character("23:45:00")))
+start_seqby= ymd_hms(paste(ymd(unq.dts[1]),as.character("00:00:00")))
+end_seqby= ymd_hms(paste(ymd(unq.dts[length(unq.dts)]),as.character("23:45:00")))
 start_seqby
 end_seqby
 
@@ -1100,11 +1096,9 @@ for (i in 9:ncol(LAI)) { ## les 8 premières lignes sont des metad
 }
 colnames(val_per_interval)=TS_seqby
 save(val_per_interval, file =  paste(opPATH.obj,'LAI_per_15mins.RData', sep = ""))
-write.table(val_per_interval, file = "LAI_per_15mins.csv", row.names = F, sep = ";")
+write.table(val_per_interval, file = paste(opPATH,"LAI_per_15mins.csv", sep = ""), row.names = F, sep = ";")
 
 ## removed irrigation dates
-load(file = "./saved_objects/unq.dts.RData")
-# unq.dts = dmy(unq.dts)
 unq.dts_irrg_rvd= unq.dts[unq.dts !=  c("2023-09-30" )]
 unq.dts_irrg_rvd= unq.dts_irrg_rvd[unq.dts_irrg_rvd !=  c("2023-10-03")]
 unq.dts_irrg_rvd= unq.dts_irrg_rvd[unq.dts_irrg_rvd !=  c("2023-10-06")]
@@ -1141,13 +1135,14 @@ save(val_per_interval, file=paste(opPATH.obj, "LAI_per_15min_entire_trial.RData"
 ##val_per_interval contains values of LAI for all timepoints ( length(TS_seqby) = 2112), we want to keep only Timestamps TS,  length(TS)= 1344, with irrigation dates removed
 LAI.mat= val_per_interval[,as.character(TS)]
 ncol(LAI.mat)
-
-save(val_per_interval, file="LAI_per_15min_rmd_irrig.RData")
+save(val_per_interval, file=paste(opPATH.obj,"LAI_per_15min_rmd_irrig.RData", sep = ""))
 
 
 
 save(LAI.mat, file = paste (opPATH.obj, "LAI.mat.RData", sep = ""))
-write.table(LAI.mat, file = "LAI.mat.csv", sep = ";", dec = ".")
+load(file = paste (opPATH.obj, "LAI.mat.RData", sep = ""))
+
+write.table(LAI.mat, file = paste(opPATH,"LAI.mat.csv", sep = ""), sep = ";", dec = ".")
 
 
 ##### plot LAI over time to check the profile
@@ -1178,14 +1173,6 @@ max_df=as.data.frame(colMax(LAI.mat))
 max(max_df[1:nrow(max_df),]) ## 
 min_df=as.data.frame(colMin(LAI.mat))
 min(min_df[1:nrow(min_df),]) ## 
-# ## REMOVED OUTLIERS INF if Negative LAI value
-# for  (j in 1:ncol(LAI.mat_rmd_out)){ 
-#   for (i in 1:nrow(LAI.mat_rmd_out)) { 
-#     LAI.mat_rmd_out[i,j][LAI.mat_rmd_out[i,j]<0]<- NA     }
-#   print(j)
-# }
-# 
-# LAI.mat_rmd_out= LAI.mat
 
 
 ################################ 3. CALCUL LEAF AREA ################################ 
@@ -1205,8 +1192,6 @@ rownames(LEAF_AREA)= LC
 colnames(LEAF_AREA)=TS
 save(LEAF_AREA,  file = paste (opPATH.obj, "LEAF_AREA.RData", sep = ""))
 
-write.table(LEAF_AREA, file = "LEAF_AREA.csv", sep = ";", dec = ".")
-
 
 ## removed outliers 
 max_df=as.data.frame(colMax(LEAF_AREA)) 
@@ -1215,16 +1200,16 @@ min_df=as.data.frame(colMin(LEAF_AREA))
 min(min_df[1:nrow(min_df),]) ##  
 
 save(LEAF_AREA, file = paste(opPATH.obj,"LEAF_AREA_rmd_out.RData", sep = ""))
-write.table(LEAF_AREA, file = "LEAF_AREA_rmd_out.csv", sep = ";", dec = ".")
-
+write.table(LEAF_AREA, file = paste(opPATH,"LEAF_AREA.csv", sep= ""), sep = ";", dec = ".")
+            
 
 data=as.data.frame(t(LEAF_AREA))
 colnames(data)= LC
 rownames(data)=TS
 data$TS= TS
 data$TS =ymd_hms(data$TS)
-
-for ( i in 1: ncol(data)) {
+i=1
+# for ( i in 1: ncol(data)) {
   png(file = paste(opPATH.profile,i, "LA_over_time.png", sep = ""))
   plot<-
     ggplot(data =data, aes(x=TS))+
@@ -1236,14 +1221,24 @@ for ( i in 1: ncol(data)) {
     theme(axis.text.x=element_text(angle = -45, hjust = 0))
   print(plot)
   dev.off()
-  print(i)
-}
+#   print(i)
+# }
 
 
 ################################ 4. ETr NON NORMALIZED ############################### 
-load(file = "ETr_filtered.RData")
-x= ETr_filtered
-ETr_filt_imputed_FILE <- x
+load(file = "./saved_objects/ETr_smoothFILE.RData")
+
+  ## add 2 columns Experiment and Species to metad file
+  metad_emptyrows$Experiment[9:nrow(metad_emptyrows)] = "EXp60"
+  metad_emptyrows$Species[9:nrow(metad_emptyrows)] ="Sorghum"
+
+  
+  # arrange the columns in a certain order
+  metad_emptyrows <- metad_emptyrows %>% select(unit, old_unit, Experiment, Treatment, Species, Genotype, G..Alias, Replicates)  
+    
+  x= cbind(metad_emptyrows, ETr_smoothFILE[7:ncol(ETr_smoothFILE)])
+  ETr_filt_imputed_FILE= x
+### start of calculateTr package ...
 ETr_smth.mat <- ETr_filt_imputed_FILE[9:nrow(ETr_filt_imputed_FILE), 
                                       9:ncol(ETr_filt_imputed_FILE)]
 
@@ -1254,40 +1249,31 @@ rownames(ETr_smth.mat)= ETr_smth.mat[,1]
 ETr_smth.mat= ETr_smth.mat[,-1]
 colnames(ETr_smth.mat)=TS
 
-## add ETref values
-ETref=x[8,9:ncol(x)]
-colnames(ETref)= TS
-ETr_smth.mat = rbind(ETref,ETr_smth.mat )
-rownames(ETr_smth.mat)[1]= "ETref" 
-rownames(ETr_smth.mat)=LC
-# ETr_smth.mat=ETr_smth.mat[,-]
 
 max_df=as.data.frame(colMax(ETr_smth.mat)) 
-max(max_df[1:nrow(max_df),]) ##  0.122
+max(max_df[1:nrow(max_df),]) ##  
 min_df=as.data.frame(colMin(ETr_smth.mat))
-min(min_df[1:nrow(min_df),]) ## -0.01
+min(min_df[1:nrow(min_df),]) ##
 
 
 ## removed negative values
 for (i in 1:nrow(ETr_smth.mat)){
   for (j in 1:ncol(ETr_smth.mat)){
     ETr_smth.mat[i,j][ETr_smth.mat[i,j]<0]<- NA } }
-load( file = "ETr_smth.mat_25_03_rmd_negative.RData,")
-
-save(ETr_smth.mat, file = "ETr_smth.mat_25_03_rmd_negative.RData,")
-write.table(ETr_smth.mat, file = "ETr_smth.mat_update_25_03_rmd_negative.csv", sep = ";", dec = ".")
+save(ETr_smth.mat, file = paste(opPATH.obj,"ETr_smth.mat_rmd_out.RData", sep = ""))
+load(file = paste(opPATH.obj,"ETr_smth.mat_rmd_out.RData", sep = ""))
+write.table(ETr_smth.mat, file = paste(opPATH,"ETr_smth.mat_rmd_out.csv", sep = ""), sep = ";", dec = ".")
 
 ETref= t(x[8,9:ncol(x)])
 data=as.data.frame(t(ETr_smth.mat))
-colnames(data)= LC
-data=  as.data.frame(apply(data, 2, as.numeric))
 data = cbind(ETref, data)
-colnames(data)= c("ETref",LC)
+colnames(data)= c("ETref",rownames(ETr_smth.mat))
+
 
 data$TS= TS
 data$TS =ymd_hms(data$TS)
 i=2
-for ( i in 2: ncol(data)) {
+# for ( i in 2: ncol(data)) {
   png(file = paste(opPATH.profile,i-1, "_ETr_non_normalized_ETref.png", sep = ""))
   plot<-
     ggplot(data =data, aes(x=TS))+
@@ -1300,20 +1286,22 @@ for ( i in 2: ncol(data)) {
     theme(axis.text.x=element_text(angle = -45, hjust = 0))
   print(plot)
   dev.off()
-  print(i)
-}
+#   print(i)
+# }
 
 
 ################################ 5. ETr  NORMALIZED BY LA ############################### 
-ETr_smth.mat = ETr_smth.mat[-1,] ## enlever la premiere ligne ETref
-## removed 38:10:01 and 38:10:02 (row 854 and 855) because there are just planimeter (PE 3DLA missing data) 
+# ETr_smth.mat = ETr_smth.mat[-1,] ## enlever la premiere ligne ETref
+# removed 38:10:01 and 38:10:02 (row 854 and 855) because there are just planimeter (PE 3DLA missing data)
 rownames(ETr_smth.mat)[854]
 rownames(ETr_smth.mat)[855]
 
+
 ETr_smth.mat= ETr_smth.mat[-c(854, 855),]
-save(ETr_smth.mat, file = "ETr_smth.mat.RData")
-LC=rownames(ETr_smth.mat)
-## length(LC) 1204 LC ok !
+
+save(ETr_smth.mat, file = paste(opPATH.obj,"ETr_smth.mat.RData", sep = ""))
+nrow(ETr_smth.mat)
+nrow(LEAF_AREA)
 
 ### normalization by LA 
 ETR_normalized= data.frame(matrix(NA, nrow = nrow(ETr_smth.mat), ncol =  ncol(ETr_smth.mat)))
@@ -1325,28 +1313,28 @@ for (i in 1:nrow(ETr_smth.mat)){
   print(i)
 }
 colnames(ETR_normalized)= TS
+LC= rownames(LEAF_AREA)
 rownames(ETR_normalized)= LC
 
 
 max_df=as.data.frame(colMax(ETR_normalized))
 max(max_df[1:nrow(max_df),]) 
-min_df=as.data.frame(colMin(ETR_normalized)) ##is this maximum weight value is possible?  or outlier?
+min_df=as.data.frame(colMin(ETR_normalized)) 
 min(min_df[1:nrow(min_df),]) 
 
-save(ETR_normalized, file = "ETR_normalized_data_normalized_LA.RData")
-write.table(ETR_normalized, file = "ETR_normalized_by_LA.csv", sep = ";", dec = ".")
+save(ETR_normalized, file = paste(opPATH.obj,"ETR_normalized_data_normalized_LA.RData", sep = ""))
+write.table(ETR_normalized, file = paste(opPATH,"ETR_normalized_by_LA.csv",sep=""), sep = ";", dec = ".")
 
 
 
 ### plot ETr normalized by LA 
 
 data=as.data.frame(t(ETR_normalized))
-# data=as.data.frame(t(ETR_normalized))
 data$TS= TS
 data$TS =ymd_hms(data$TS)
-
-for ( i in 1: ncol(data)) {
-  png(file = paste(opPATH.profile,i, "_ETR_normalized.png", sep = ""))
+i=1
+# for ( i in 1: ncol(data)) {
+ png(file = paste(opPATH.profile,i, "_ETR_normalized.png", sep = ""))
   plot<-
     ggplot(data =data, aes(x=TS))+
     ylab("ETr normalized (mm.15min-1.m-2) ")+
@@ -1357,8 +1345,8 @@ for ( i in 1: ncol(data)) {
     theme(axis.text.x=element_text(angle = -45, hjust = 0))
   print(plot)
   dev.off()
-  print(i)
-}
+#   print(i)
+# }
 # 
 ## We observed high peak that does not seem logical. It is not always the same day (not related to weather condition).  not present for all genotypes
 ## Objective : removed these peaks based on max per day 
@@ -1424,14 +1412,18 @@ for (n in (1:(ncol(data)-2))) { # for each LC (2 last col = TS and date)
 
 ETR_normalized= as.data.frame(t(data))
 ETR_normalized= ETR_normalized[-nrow(ETR_normalized),] # removed TS nd date
+ETR_normalized= ETR_normalized[-nrow(ETR_normalized),] # removed TS nd date
+
 ETR_normalized=  as.data.frame(apply(ETR_normalized, 2, as.numeric))
 rownames(ETR_normalized)= LC
 
-save(ETR_normalized, file = "ETR_normalized_rmd_out.RData")
+save(ETR_normalized, file = paste(opPATH.obj,"ETR_normalized_rmd_out.RData", sep = ""))          
 
-
-
-for ( i in 1: ncol(data)) {
+data=as.data.frame(t(ETR_normalized))
+data$TS= TS
+data$TS=ymd_hms(data$TS)
+i=1
+# for ( i in 1: ncol(data)) {
   png(file = paste(opPATH.profile,i, "_ETR_normalized_rmd_out.png", sep = ""))
   plot<-
     ggplot(data =data, aes(x=TS))+
@@ -1443,13 +1435,11 @@ for ( i in 1: ncol(data)) {
     theme(axis.text.x=element_text(angle = -45, hjust = 0))
   print(plot)
   dev.off()
-  print(i)
-}
+#   print(i)
+# }
 
 ################################ 6. TRANSPIRATION 1ST STEP Tr ############################### 
 Trans.mat= data.frame(matrix(NA, nrow = nrow(ETr_smth.mat), ncol =  ncol(LAI.mat))) ### ncol 96*nombre jour 14 
-rownames(Trans.mat)=LC
-colnames(Trans.mat)=TS
 
 for (i in 1:nrow(ETr_smth.mat)){
   if (rownames(ETr_smth.mat)[i] ==rownames(LAI.mat)[i]){
@@ -1467,29 +1457,18 @@ for (j in (1:ncol(Trans.mat))){ ## i col LC
   
 }
 
-save (Trans.mat, file = "Transpiration_Trans.mat.RData")
-write.table(Trans.mat, file = "Trans.mat.csv", sep = ";", dec = ".")
-
 
 max_df=as.data.frame(colMax(Trans.mat))
 max(max_df[1:nrow(max_df),]) #   
 min_df=as.data.frame(colMin(Trans.mat)) 
 min(min_df[1:nrow(min_df),]) #   
 
-# update 20.03 rmd outliers : 
+save (Trans.mat, file = paste(opPATH.obj,"Transpiration_Trans.mat.RData", sep = ""))
+write.table(Trans.mat, file = paste(opPATH,"Trans.mat.csv", sep = ""), sep = ";", dec = ".")
 
-max_df=as.data.frame(colMax(Trans.mat))
-max(max_df[1:nrow(max_df),]) #   0.07207621
-min_df=as.data.frame(colMin(Trans.mat)) 
-min(min_df[1:nrow(min_df),]) # 0
-
-
-Trans.mat= Trans.mat[-ncol(Trans.mat)]
-save (Trans.mat, file = "Transpiration_Trans.mat_rmd_out.RData")
-write.table(Trans.mat, file = "Trans.mat_rmd_out.csv", sep = ";", dec = ".")
 
 ## add VPD 
-VPD=x[3,7:ncol(x)] # LENGTH + 1344 TS
+VPD=x[3,9:ncol(x)]
 
 data=as.data.frame(t(Trans.mat))
 data=cbind(t(VPD), data)
@@ -1647,7 +1626,7 @@ colnames(TR.mat)= TS
 
 # Calculate Transpiration Rate #
 #Kar 2020 : "The Tr values thus obtained were converted to Transpiration Rate (TR , i.e. the transpiration per unit of leaf area) by dividing Tr of each day
-with the corresponding Observed LA (Eq.6 : TR = Tr/ ObservedLA)
+#with the corresponding Observed LA (Eq.6 : TR = Tr/ ObservedLA)
 for (i in 1:nrow(TR.mat)){
   # for (j in 1:ncol(TR.mat)) {
   TR.mat[i, ] <- (Trans.mat[i, ]/ (LEAF_AREA[i, ]))
@@ -1674,7 +1653,7 @@ rownames(data)=TS
 data$TS= TS
 data$TS =ymd_hms(data$TS)
 
-i=1
+i=2
 # for ( i in 1: ncol(data)) {
   png(file = paste(opPATH.profile,i, "_TRrate.png", sep = ""))
   plot<-
@@ -1693,7 +1672,8 @@ i=1
 
 ## still high peaks to removed
 data=as.data.frame(t(TR.mat))
-data  = data[-nrow(data),]
+nrow(data)
+# data  = data[-nrow(data),]
 rownames(data) = TS
 colnames(data)= LC
 data$TS= TS
@@ -1754,9 +1734,9 @@ for (n in (1:(ncol(data)-2))) { # for each LC (2 last col = TS and date)
   }
 }
 
+data$TS= ymd_hms(data$TS)
 
-
-i=1
+i=2
 # for ( i in 1: ncol(data)) {
   png(file = paste(opPATH.profile,i, "_TR.mat_rmd_out.png", sep = ""))
   plot<-
@@ -1771,18 +1751,16 @@ i=1
   dev.off()
 #   print(i)
 # }
-
-
-
-
-
+  
 TR.mat_rmd= as.data.frame(t(data))
 TR.mat_rmd= TR.mat_rmd[-nrow(TR.mat_rmd),]
 TR.mat_rmd= TR.mat_rmd[-nrow(TR.mat_rmd),] # removed TS nd date 
 TR.mat_rmd=  as.data.frame(apply(TR.mat_rmd, 2, as.numeric))
 rownames(TR.mat_rmd)= LC
 
-save(TR.mat_rmd, file = "TR.mat_rmd_out.RData,")
+save(TR.mat_rmd, file = "TR.mat_rmd_out.RData")
+load(TR.mat_rmd, file = "TR.mat_rmd_out.RData")
+
 write.table(TR.mat_rmd, file = "TR.mat_rmd_out.csv", sep = ";", dec = ".")
 
 ## plot TRrate and Tr on the 
@@ -1838,35 +1816,37 @@ i=levels(data_TRrate_TR$LC)[1]
 
 
 ## remettre les dataframe  TR.mat adapté pour l'extraction de features
-load(file = "metad.RData")
-metad = metad %>% arrange(metad$unit) ##trie par ordre croissant de nom de LC
+load(file = "./saved_objects/TR.mat.RData")
+  
+load(file = "./saved_objects/metad_emptyrows.RData")
+metad_emptyrows[9:nrow(metad_emptyrows),] = metad_emptyrows[9:nrow(metad_emptyrows),]  %>% arrange(metad_emptyrows$unit[9:nrow(metad_emptyrows)]) ##trie par ordre croissant de nom de LC
 
 ## enlever les LC manquantes :    ## removed 38:10:01 and 38:10:02 (row 854 and 855) because there are just planimeter (PE 3DLA missing data) 
-metad= metad[-855,]
-metad= metad[-854,]
+metad_emptyrows[(854+9),]
+metad_emptyrows[(853+9),]
 
+metad_emptyrows = metad_emptyrows[-(854+9),]
+metad_emptyrows = metad_emptyrows[-(853+9),]
 ## add wther
-load(file = "wthr.ETref.ETobs.RData")
+load(file = "./saved_objects/wthr.ETref.ETobs.RData")
 weather= wthr.ETref.ETobs[1:8,]
 rm(wthr.ETref.ETobs)
 
 ## select weather on TS saved
 weather= weather[,as.character(TS)]
 
-# TR.mat= TR.mat[,-1]
-# TR.mat= rbind(weather,TR.mat) ## weather and Trans merged
-# 
-# ### add 9 rows with NA values
-# metad <- insertRows(metad, 1 , new = NA)
-# metad <- insertRows(metad, 1 , new = NA)
-# metad <- insertRows(metad, 1 , new = NA)
-# metad <- insertRows(metad, 1 , new = NA)
-# metad <- insertRows(metad, 1 , new = NA)
-# metad <- insertRows(metad, 1 , new = NA)
-# metad <- insertRows(metad, 1 , new = NA)
-# metad <- insertRows(metad, 1 , new = NA)
-# 
-# TR.mat_metad = cbind(metad, TR.mat)
+TR.mat= TR.mat[,-1]
+
+TR.mat= rbind(weather,TR.mat) ## weather and Trans merged
+TR.mat_metad = cbind(metad_emptyrows, TR.mat)
+
+
+## features extraction does not tolerate too much missing data. (pb to calculate model ..)
+## easy way : replace NA by 0 ... WORK IN PROGRESS
+TR.mat_rmd_NA_metad = TR.mat_rmd[is.na(TR.mat_rmd)] <- 0
+TR.mat= rbind(weather,TR.mat_rmd_out_metad) ## weather and Trans merged
+TR.mat_rmd_out_metad= cbind(metad_emptyrows,TR.mat_rmd_out_metad)
+
 featuresRES <- getFeatures(x = TR.mat_rmd_out_metad)
 
 allFeatures <- featuresRES$allFeatures
