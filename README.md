@@ -4,11 +4,13 @@ This project concerns an update of the pipeline described in the article :Kar, S
 
 Link GITHUB : https://github.com/KSoumya/EZTr
 
-This script is based on the analysis of "Exp60" carried out at ICRISAT, Hyderabad, India, in September-October 2023. The measurement period is from September 27 to October 17, with 6 irrigation days removed. 
-Weight measurements (Loadcells measurements) and climate data are recorded on a 15 min interval. The data are coupled with PlantEye data measuring 3D-LA leaf area twice a day, and planimeter data (observed LA) at the end of the trial. 
-The plant material is composed of 320 sorghum genotypes of RefSet list defined by the Genbank at ICRISAT.
+The script developed by Kar et al. 2020 concerns the analysis of data from the HTP Leasyscan platform. This platform consists of : 
+- .... load cells able of measuring weights at 15min intervals.  
+- PlantEye scanner for monitoring architecture/ plant growth traits (especially leaf area) . The scanner is capable of taking 2 measurements per day. 
+- Weather data monitoring, at 15-minute intervals.
 
-During the analysis of this experiment, we observed some data outliers that were not cleaned, and aberrants ETref values. We therefore decided to take a closer look at the filtering stages and identified certain steps where modifications would be necessary. We present below the modifications we made to the initial script, followed by some simple suggested improvements. We also noticed that the pipeline was adapted to the specific case of the ICRISAT platform. A number of enhancements are envisaged as possible improvements (not yet present in the script) to adapt it to other HTP platform (different LC size, different location...)
+
+This script here is based on the analysis of "Exp60" carried out at ICRISAT, Hyderabad, India, in September-October 2023. The measurement period is from September 27 to October 17, with 6 irrigation days removed.  Leaf area measured by PlantEye measuring 3D-LA leaf area twice a day is supplemented by leaf area data observed with a planimeter at the end of the trial. The plant material is composed of 320 sorghum genotypes of RefSet list defined by the Genbank at ICRISAT. During the analysis of this experiment, we observed some data outliers that were not cleaned, and aberrants ETref values. We therefore decided to take a closer look at the filtering stages and identified certain steps where modifications would be necessary. We present below the modifications we made to the initial script, followed by some simple suggested improvements. We also noticed that the pipeline was adapted to the specific case of the ICRISAT platform. A number of enhancements are envisaged as possible improvements (not yet present in the script) to adapt it to other HTP platform (different LC size, different location...)
 
 
 ## Modifications made to the initial version
