@@ -1,0 +1,1265 @@
+---
+title: "2-ETnorm_ETREF_LEASYSCAN"
+output: pdf_notebook
+---
+ ### FROM KAR ET AL PIPELINE, WE HAVE TR SMOOTH NORMALIZED BY LA. 
+ **MAIN QUESTION : Do the slope of TR rate - ETRef measured by Leasyscan platform differ among genotypes? what heritability ? **
+
+
+
+OBJECTIVES : 
+**we want to draw the relation TRrate - ETREF (measured by Leasyscan every 15min)**
+- how to do it ? We want to compare with another manual experiment. So we will adapt the Leasyscan data to this previous experiment. (Description above)
+- relation TRrate-ETRef : what is the best model to represent it ? (linear, affine, polynomial, breakpoint?)
+- with the best model, extract the slope value of the regression TRrate- ETref
+- distribution, anova slope-genotype, and heritability calculation : is it an interesting trait for GWAS?
+
+
+- import the data of the previous experiment
+- Leasyscan : 4 sorghum plants per plot// Thies experiment 1 plant per plot. we suppose that we work with the Leasyscan data in canopy, and in the previous experiment with individual plant : do we see a correlation between slope value ?
+- Leasyscan data measured on 14 days (21 days,  less irrigation) : compare the start and end of experiment; before and after canopy closure. Do we see a correlation
+
+
+
+The compared experiment = Thies experiment
+- manual measurement in Thies, Sénégal, in February 2024
+- individual plants in pots 10L 
+- measured from 56- 60 DAS (4 days of measurements)
+- measured at fixed hours 8Ham 12Ham, 3Hpm 5H30pm
+- sandy soil
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "")
+getwd()
+```
+install packages
+```{r}
+rm(list=ls())
+library("lubridate")
+library("hms")
+library("dplyr")
+library("stringr")
+library("data.table")
+library("ggplot2")
+library("ggpubr")
+library("car")
+library("zoo")
+library("soiltestcorr")
+
+## libraries Kar et al
+library(SpATS)
+library(reshape2)       
+library("tidyr")
+library(tidyr)     # data management
+library(nlme)      # nonlinear model
+library(locfit)    # local regression
+library(gss)       # smoothing splines
+library(factoextra)       
+library(gridExtra)       
+library(mgcv)
+library(statgenHTP)
+library(magick)
+library(segmented)
+library(MASS)
+library(tidyverse)
+library(rstatix)
+library(statgenSTA)
+library(berryFunctions )
+
+
+
+check_if_present <- function(condition, liste) {
+    # Vérifier si la condition est présente dans la liste
+    if (any(condition %in% liste)) {
+        return(TRUE)
+    } else {
+        return(FALSE)
+    }
+}
+
+
+```
+
+we have TR rate on 15 minutes intervals from Kar et al pipeline ouputs. We want to have the sum of transpiration over periods as the compared experiment : 
+8h-12h, 12h-15h, 15h-17h30, and 17h30-8h
+
+```{r TR in periods  }
+#load metadata previously acquired in KAr et al pipeline (TS , LC, genotype info) 
+load('./data_TRrate_ETREF/TS.RData')
+load("./data_TRrate_ETREF/LC.RData")
+geno_info = read.csv("./data_TRrate_ETREF/Label_SPATS.csv", sep = ";", header = TRUE)
+geno_info$Variety_ID = as.factor(geno_info$Variety_ID)
+geno_info$geno_trt = str_replace_all(geno_info$geno_trt, "\\| WW_R","..WW_R")
+seq_by=15 ## define as parameter in Kar et al. 
+irrg.dts <- c("2023-09-30","2023-10-03","2023-10-06", "2023-10-10", "2023-10-13", "2023-10-17", "2023-10-18") ## remove irrigation days
+
+
+
+
+
+# load transpiration rate data on 15 minute interval
+inputfile_TR<-read.csv("./data_TRrate_ETREF/TR.mat_updated.csv", sep = ";", header = TRUE)  #draw raw TR smooth normalized by leaf area  
+inputfile_TR= inputfile_TR[,-1] ## removed the unit column
+colnames(inputfile_TR)= TS
+rownames(inputfile_TR) = LC
+
+LC= as.data.frame(LC) 
+colnames(LC)= "unit"
+
+
+## create a working dataset names data (and used the inputfie_TR as saved)
+data = as.data.frame(t(inputfile_TR))
+
+TS= ymd_hms(TS)
+Date = date(TS)
+Hour =  as_hms(ymd_hms(TS))
+Hour = as.character(Hour)
+data= cbind(TS, Date, Hour, data)
+
+## create an empty dataset to store all the sum of transpiration
+TR_entire_exp <- as.data.frame(matrix(NA, nrow = 5*length(unique(data$Date)), ncol = length(colnames(data))))
+  colnames(TR_entire_exp)= colnames(data)
+  TR_entire_exp$day = NA
+  a=1
+  b=5
+
+unq.dts = unique(data$Date)
+
+## sum of transpiration over periods 
+for (d in 1:length(unique(data$Date))){
+  TRrate_period <- as.data.frame(matrix(NA, nrow = 5, ncol = length(colnames(data))))
+  colnames(TRrate_period)= colnames(data)
+  ## definition of time period
+  colnames(TRrate_period)[2]= "start"
+  colnames(TRrate_period)[3]= "end"
+  TRrate_period$start = c(0, 8,12,15,17.5)
+  TRrate_period$end = c(8,12,15,17.5,24)
+  TRrate_period$TS = c(0,1,2,3,4)
+  subset= data[data$Date == unique(data$Date)[d],]### pick a day
+  
+  #period 0 from 0h to 8h
+    start_interval0 ="00:00:00"
+    end_interval0 ="08:00:00" 
+    line_start0 =  which(subset$Hour %in% start_interval0)     
+    line_end0 =  which(subset$Hour %in% end_interval0)     
+    
+    for (j in 4:ncol(subset)){ ## ncol 1:TS, 2:Date, 2:Hour
+   sum_0_8= sum(subset[c(line_start0:line_end0),j])
+   TRrate_period[1,j]=    sum_0_8
+    }
+    
+    #period 1 from 8h to 12h
+    start_interval1 ="08:00:00"
+    end_interval1 ="12:00:00" 
+    line_start1 =  which(subset$Hour %in% start_interval1)     
+    line_end1 =  which(subset$Hour %in% end_interval1)     
+    
+    for (j in 4:ncol(subset)){
+   sum_8_12= sum(subset[c(line_start1:line_end1),j])
+   TRrate_period[2,j]=    sum_8_12
+    }
+    
+    #period 2 from 12am to 15
+    start_interval2 ="12:00:00"
+    end_interval2 ="15:00:00" 
+    line_start2 =  which(subset$Hour %in% start_interval2)     
+    line_end2 =  which(subset$Hour %in% end_interval2)  
+    
+     for (j in 4:ncol(subset)){
+   sum_12_15= sum(subset[c(line_start2:line_end2),j])
+   TRrate_period[3,j]=    sum_12_15
+    }
+    
+    #period 3 from 15 to 17h30
+    start_interval3 ="15:00:00" 
+    end_interval3 ="17:30:00" 
+    line_start3 =  which(subset$Hour %in% start_interval3)     
+    line_end3 =  which(subset$Hour %in% end_interval3)  
+    
+   for (j in 4:ncol(subset)){
+   sum_15_1730= sum(subset[c(line_start3:line_end3),j])
+   TRrate_period[4,j]=    sum_15_1730
+   }
+    
+    #period 4 from 17h30 to 23h59
+    start_interval4 ="17:30:00" 
+    end_interval4 ="23:45:00" 
+    line_start4 =  which(subset$Hour %in% start_interval4)     
+    line_end4 =  which(subset$Hour %in% end_interval4)  
+    
+   for (j in 4:ncol(subset)){
+   sum_1730_0= sum(subset[c(line_start4:line_end4),j])
+   TRrate_period[5,j]=    sum_1730_0
+   }
+
+  TR_entire_exp[a:b,] = TRrate_period
+ 
+  TR_entire_exp$day[a:b]= d
+  a=a+5
+  b=b+5
+  
+}
+
+ colnames(TR_entire_exp)[1] = "period"
+  colnames(TR_entire_exp)[2] = "start"
+  colnames(TR_entire_exp)[3] = "end"
+  colnames(TR_entire_exp)[ncol(TR_entire_exp)] = "n_day"
+TR_entire_exp=relocate(TR_entire_exp, n_day)
+
+
+
+TR_entire_exp = TR_entire_exp[-1,]##remove the first line midnight-8 a.m. on the first day (not measured in the manual experiment)
+TR_entire_exp =TR_entire_exp[-nrow(TR_entire_exp),]#remove the last line 5h30pm to mid-night, last day (not measured in the manual experiment)
+
+
+#sum the midnight-8am and 5:30pm-midnight periods from one day to the next
+TR_entire_exp$period [TR_entire_exp$period  == 0] <- 4 
+
+  for (i in 1:(nrow(TR_entire_exp)-1)){
+  if (TR_entire_exp$period[i] == TR_entire_exp$period[i+1] & !is.na(TR_entire_exp$period[i+1])) {
+
+     for (j in 5:ncol(TR_entire_exp)){
+            TR_entire_exp[i,j]  =  sum(TR_entire_exp[i,j],TR_entire_exp[i+1,j])
+    }
+    TR_entire_exp = TR_entire_exp[-(i+1),]
+  } 
+  }
+
+# TRrate is expressed as the TRrate on the entire period But the duration of the period is different. Need to divide by the duration of the period
+TR_entire_exp$duration=NA
+
+  for (i in 1:nrow(TR_entire_exp)){
+    TR_entire_exp$duration[i]  = TR_entire_exp$end[i]-TR_entire_exp$start[i]
+  }
+  
+TR_entire_exp$duration [TR_entire_exp$duration  == 6.5] <- 14.5 ## period from 17h30 to 00h00 and 00h00 to 8h
+
+
+
+  for (i in 1:nrow(TR_entire_exp)){
+    for (j in 5:ncol(TR_entire_exp)-1){
+    TR_entire_exp[i,j]  = TR_entire_exp[i,j]/TR_entire_exp$duration[i]
+  }}
+## the TR value is now expressed on mm.h-1.m-²
+
+#change colnames of TR dataset to have the genotype/treatment information, instead of the unit
+header <- left_join(LC, geno_info, by = "unit")  
+header <- header[!duplicated(header$unit), ]
+header$geno_trt = as.character(header$geno_trt)
+header$geno_trt = str_replace_all(header$geno_trt, "\\| WW_R", "..WW_R")
+header = rbind( "n_day",     "period"  ,  "start"  ,   "end", header)
+
+colnames(TR_entire_exp) = header$geno_trt
+```
+
+We have now TRrate expressed in mm.h-1.m-2, over the period of 8h12h, ... 
+Let's do the same for the ETref values. We cannot used directly the ETref values calculated by Kar et al pipeline, because ETref need to used the mean of temperatures, relative humidity and wind speed over the period, but the SUM of SOLAR RADIATION  on the period. It is easier to come back to the raw data : wthr.DFagg15min.filt.RData
+
+**!! be sure to save the wthr.DFagg15min.filt.RData in the pipeline (preprocessed data in kar et al before the ETref calculation ) !!**
+
+```{r group ETref in periods  }
+load('./data_TRrate_ETREF//wthr.DFagg15min.filt.RData')
+x=wthr.DFagg15min.filt
+
+wthr.DFagg15min.filt$Date =   date(wthr.DFagg15min.filt$TS)
+wthr.DFagg15min.filt$time <- strftime(wthr.DFagg15min.filt$TS, format="%H:%M:%S", tz="UTC")
+
+
+## create a empty dataset to store ETref over all periods
+
+  wthr_mean_exp = as.data.frame(matrix(NA, nrow = 5*length(unique(date(TS))), ncol = 8)) ## be sure that TS does not contained irrigation dates
+                              
+  wthr_mean <- as.data.frame(matrix(NA, nrow = 5, ncol = 8))
+  colnames(wthr_mean) = c("period","start",  "end","mean_T", "mean_RH", "mean_WS", "sum_SR", "day")
+  colnames(wthr_mean_exp) =   colnames(wthr_mean)
+
+  a=1
+  b=5
+
+
+for (d in 1:length(unique(wthr.DFagg15min.filt$Date))){
+  wthr_mean <- as.data.frame(matrix(NA, nrow = 5, ncol = 8))
+  colnames(wthr_mean) = c("period","start",  "end","mean_T", "mean_RH", "mean_WS", "sum_SR", "day")
+
+  wthr_mean$period = c(0,1,2,3,4)
+  wthr_mean$start = c(0, 8,12,15,17.5)
+  wthr_mean$end = c(8,12,15,17.5,24)
+
+  if (check_if_present(condition = unique(wthr.DFagg15min.filt$Date)[d], liste = unique(date(TS)))==TRUE){
+    
+      subset= wthr.DFagg15min.filt[wthr.DFagg15min.filt$Date == unique(wthr.DFagg15min.filt$Date)[d],]### pick a day
+     subset$WS_KM_H = subset$WS*1000/3600 ## convert WS measured in km/h of weather station to m/s adapted to Penman Monteith equation
+     subset$SR_MJS_M2 = subset$SR*0.000001*as.numeric(seq_by) * 60 # convert SR measured in W/m² weather station to MJ/s * m² adapted to Penman Monteith equation
+  #period 0 from 0h to 8h
+    start_interval0 ="00:00:00"
+    end_interval0 ="08:00:00" 
+    line_start0 =  which(subset$time %in% start_interval0)     
+    line_end0 =  which(subset$time %in% end_interval0)     
+    
+   mean_T= mean(subset$Temp[c(line_start0:line_end0)])
+   mean_RH= mean(subset$RH[c(line_start0:line_end0)])
+   mean_WS = mean(subset$WS_KM_H[c(line_start0:line_end0)])
+   sum_SR= sum(subset$SR_MJS_M2[c(line_start0:line_end0)])
+   
+   wthr_mean$mean_T[1]=   mean_T 
+   wthr_mean$mean_RH[1]=   mean_RH
+   wthr_mean$mean_WS[1]= mean_WS
+   wthr_mean$sum_SR[1]=    sum_SR
+
+    #period 1 from 8h to 12h
+    start_interval1 ="08:00:00"
+    end_interval1 ="12:00:00" 
+    line_start1 =  which(subset$time %in% start_interval1)     
+    line_end1 =  which(subset$time %in% end_interval1)     
+
+   mean_T= mean(subset$Temp[c(line_start1:line_end1)])
+   mean_RH= mean(subset$RH[c(line_start1:line_end1)])
+   mean_WS = mean(subset$WS_KM_H[c(line_start1:line_end1)])
+   sum_SR= sum(subset$SR_MJS_M2[c(line_start1:line_end1)])
+   
+   # mean_T
+   # mean_RH
+   # mean_WS
+   # sum_SR
+   
+   wthr_mean$mean_T[2]=   mean_T 
+   wthr_mean$mean_RH[2]=   mean_RH
+   wthr_mean$mean_WS[2]= mean_WS
+   wthr_mean$sum_SR[2]=    sum_SR
+
+    
+    #period 2 from 12am to 15
+    start_interval2 ="12:00:00"
+    end_interval2 ="15:00:00" 
+    line_start2 =  which(subset$time %in% start_interval2)     
+    line_end2 =  which(subset$time %in% end_interval2)  
+    
+   mean_T= mean(subset$Temp[c(line_start2:line_end2)])
+   mean_RH= mean(subset$RH[c(line_start2:line_end2)])
+   mean_WS = mean(subset$WS_KM_H[c(line_start2:line_end2)])
+   sum_SR= sum(subset$SR_MJS_M2[c(line_start2:line_end2)])
+   
+   wthr_mean$mean_T[3]=   mean_T 
+   wthr_mean$mean_RH[3]=   mean_RH
+   wthr_mean$mean_WS[3]= mean_WS
+   wthr_mean$sum_SR[3]=    sum_SR
+   
+    
+    #period 3 from 15 to 17h30
+    start_interval3 ="15:00:00" 
+    end_interval3 ="17:30:00" 
+    line_start3 =  which(subset$time %in% start_interval3)     
+    line_end3 =  which(subset$time %in% end_interval3)  
+    
+        
+    mean_T= mean(subset$Temp[c(line_start3:line_end3)])
+   mean_RH= mean(subset$RH[c(line_start3:line_end3)])
+   mean_WS = mean(subset$WS_KM_H[c(line_start3:line_end3)])
+   sum_SR= sum(subset$SR_MJS_M2[c(line_start3:line_end3)])
+   
+   wthr_mean$mean_T[4]=   mean_T 
+   wthr_mean$mean_RH[4]=   mean_RH
+   wthr_mean$mean_WS[4]= mean_WS
+   wthr_mean$sum_SR[4]=    sum_SR
+
+    
+    #period 4 from 17h30 to 23h59
+    start_interval4 ="17:30:00" 
+    end_interval4 ="23:45:00" 
+    line_start4 =  which(subset$time %in% start_interval4)     
+    line_end4 =  which(subset$time %in% end_interval4)  
+    
+        mean_T= mean(subset$Temp[c(line_start4:line_end4)])
+   mean_RH= mean(subset$RH[c(line_start4:line_end4)])
+   mean_WS = mean(subset$WS_KM_H[c(line_start4:line_end4)])
+   sum_SR= sum(subset$SR_MJS_M2[c(line_start4:line_end4)])
+   
+   wthr_mean$mean_T[5]=   mean_T 
+   wthr_mean$mean_RH[5]=   mean_RH
+   wthr_mean$mean_WS[5]= mean_WS
+   wthr_mean$sum_SR[5]=    sum_SR
+   
+  wthr_mean$day =  d
+   
+  wthr_mean_exp[a:b,] = wthr_mean
+a= a+5
+b=b+5
+  
+}
+    
+}
+  
+  
+  
+  
+wthr_mean_exp$date =NA
+
+wthr_mean_exp$date[wthr_mean_exp$day== 1] <- " 2023-09-28" 
+wthr_mean_exp$date[wthr_mean_exp$day== 2] <- "2023-09-29"
+wthr_mean_exp$date[wthr_mean_exp$day== 4] <- "2023-10-01" 
+wthr_mean_exp$date[wthr_mean_exp$day== 5] <-  "2023-10-02" 
+wthr_mean_exp$date[wthr_mean_exp$day== 7] <- "2023-10-04" 
+wthr_mean_exp$date[wthr_mean_exp$day== 8] <- "2023-10-05" 
+wthr_mean_exp$date[wthr_mean_exp$day== 10] <- "2023-10-07"
+wthr_mean_exp$date[wthr_mean_exp$day== 11] <- "2023-10-08"
+wthr_mean_exp$date[wthr_mean_exp$day== 12] <- "2023-10-09"
+wthr_mean_exp$date[wthr_mean_exp$day== 14] <- "2023-10-11"
+wthr_mean_exp$date[wthr_mean_exp$day== 15] <- "2023-10-12" 
+wthr_mean_exp$date[wthr_mean_exp$day== 17] <- "2023-10-14"
+wthr_mean_exp$date[wthr_mean_exp$day== 18] <- "2023-10-15" 
+wthr_mean_exp$date[wthr_mean_exp$day== 19] <- "2023-10-16"
+
+```
+
+```{r calculateETref}
+
+calculateETref <- function(x) {
+  
+  wthr.df <- as.data.frame(x)
+
+  # wthr.df %>% group_by(time) %>% mutate(Tmax = summarise(Value = max(wthr.df$T))) 
+  
+  ## Group by date
+  wthr.df1<-wthr_mean_exp %>%
+    arrange(date, period) %>%
+    group_by(date) %>%
+    mutate(Tmax = max(mean_T), Tmin = min(mean_T)) 
+  
+  
+  ## Calculate the Penman-Monteith Equation
+  
+  # del <- (4098(0.6108*exp(17.27*t/(t+237.3))))/(t+273.3)^2
+  # 
+  # gamma <- 0.63189 # P at 500m msl = 95.52 kPa & gamma = i.e.0.000665*95.52  
+  # 
+  # es = 0.6108*exp(17.27*t/(t + 273.3))
+  # 
+  # ea <- rh/100*es
+  # 
+  # Rng <- ((slr.rad*15*60/1000000)*2.5)
+  #  
+  # ETref <- ((0.408*del*Rng) + 0.063189*((900/96)*ws*(es-ea))/(t+273))/(del+0.063189*(1+0.34*ws))
+  
+  wthr.df1$ETref <- NA
+  colnames(wthr.df1) = c("period",  "start" ,"end", "Temp","RH" ,"WS","SR","day","date","Tmax","Tmin","ETref"  )
+  
+  for(i in 1:nrow(wthr.df1))
+  {
+    t <- wthr.df1$Temp[i] ## temperature °C
+    ws <- wthr.df1$WS[i]+0.000001 ## !! WS m/s ## WS is different from template!!
+    # tmax <- wthr.df1$Tmax[i]
+    # tmin <- wthr.df1$Tmin[i]
+    rh <- wthr.df1$RH[i]  
+    slr.rad <- wthr.df1$SR[i]### unit from :  W/m² during ...min i to : MJ/s/m² ## sum SR  is different from template!!
+    
+    gamma <- 0.665*1e-3*95.52   # 0.665*1e-3 *P, P at 500m msl = 95.52 kPa
+    
+    es = 0.6108*exp((17.27*t)/(t + 237.3))
+
+    ea <- rh/100*es
+    
+    es_ea = es-ea ##  vapour pressure deficit kPa
+    denom_del = (t+273.3)^2
+    
+   del= (4098*es)/((t+237.3)*(t+237.3))
+   
+    
+    Rng <- slr.rad ## because G = 0
+    
+    RAD1 = 0.408*del*slr.rad
+    RAD2 = gamma* (900/(24*60/as.numeric(seq_by)))/(t+273)*ws*(es-ea)
+    RAD3 = gamma *(1+0.34*ws)
+    
+
+    ETref <- (RAD1+RAD2)/(gamma+RAD3)
+    
+
+    if(ETref == 0.0){
+      
+      wthr.df1$ETref[i] <- NA
+      
+    } else {wthr.df1$ETref[i] <- ETref}
+  }
+  
+  wthr.df1$ETref <- na.approx(wthr.df1$ETref)
+  
+  wthr.df1$ETref<-round(wthr.df1$ETref, 3)
+  
+  return(wthr.df1)
+}
+
+
+```
+
+```{r group ETref in periods  }
+
+wthr.df1 =calculateETref(x=wthr_mean_exp)
+
+wthr.df1 = wthr.df1[-1,]##remove the first line midnight-8 a.m. on the first day (not measured in the manual experiment)
+wthr.df1 = wthr.df1[-nrow(wthr.df1),]##remove the last  line (stop measuring at the last day at 5pm) 
+
+wthr.df1$duration=NA
+ wthr.df1$ETREF_MM_H =NA
+ 
+ ## the ETref value is now expressed on the whole period. Divide by the duration of the period to have it in hours
+
+  for (i in 1:nrow(wthr.df1)){
+    wthr.df1$duration[i]  = wthr.df1$end[i]-wthr.df1$start[i]
+  }
+  
+ 
+ wthr.df1$duration [wthr.df1$duration == 6.5] <- 14.5 ## period from 17h30 to 00h00 and 00h00 to 8h
+
+
+  for (i in 1:nrow(wthr.df1)){
+    wthr.df1$ETREF_MM_H[i]  = wthr.df1$ETref[i]/wthr.df1$duration[i]
+  }
+## the ETref value is now expressed on mm.h-1
+
+
+wthr.df1$period [wthr.df1$period   == 0] <- 4 #sum the midnight-8am and 5:30pm-midnight periods from one day to the next
+
+  for (i in 1:(nrow(wthr.df1 )-1)){
+  if (wthr.df1$period [i] == wthr.df1$period [i+1] & !is.na(wthr.df1$period [i+1])) {
+            wthr.df1$ETref[i]  =  sum(wthr.df1$ETref[i],wthr.df1$ETref[i+1])
+            wthr.df1 = wthr.df1[-(i+1),]
+    }
+  }
+
+ETref_over_period =wthr.df1
+
+save(ETref_over_period, file = "ETref_over_period.RData")
+
+## merge TRrate and ETref 
+nrow(TR_entire_exp)
+nrow(ETref_over_period)
+
+TR_entire_exp$ETREF_MM_H = ETref_over_period$ETREF_MM_H
+TR_entire_exp = relocate(TR_entire_exp, ETREF_MM_H)
+```
+
+Now we have TR rate and ETref on the same dataset for the same period. Let's plot the relation between TR rate and ETref. But what is the best model to visualize the relation? 4 possibilities are tested : 
+- linear y=ax (intercept 0)
+- affine function  y=ax+b
+- polynomial 2nd y=ax²+bx+c
+- with breakpoint 
+
+extract slope of each model
+```{r save slope linear model}
+############## 
+formula =   y~(0+x)#  for regression with interecpt at 0
+model = "linear" 
+outputfile<-paste("./slope_leasycan", model, "TRrate_ETREF.csv", sep="_") ### name of the output file
+##############
+
+geno_info$Variety_ID = as.factor(geno_info$Variety_ID)
+
+## loop to save slope values "Estimate" , AIC R2 and R2 adj 
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 1,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[1,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+
+
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 2,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[1,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 3,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[1,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 4,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[1,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+
+```
+
+```{r save slope polynomial model}
+############## 
+# parameters to change !
+formula = y ~ poly(x, 2)# #y~x for linear regression,  or polynomial y ~ poly(x, 2),
+model = "polynomial" ##
+outputfile<-paste("./slope_leasycan", model, "TRrate_ETREF.csv", sep="_") ### name of the output file
+##############
+
+geno_info$Variety_ID = as.factor(geno_info$Variety_ID)
+
+## loop to save slope values "Estimate" , AIC R2 and R2 adj 
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 1,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[2,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+### here df_summary$coefficients[2,1] because [1,1] = intercept !!! careful
+
+  }   }
+  
+}
+
+
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 2,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[2,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 3,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[2,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 4,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[2,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+
+```
+
+```{r save slope affine  model}
+############## 
+# parameters to change !
+formula = y~x# #y~x for affine regression,  or polynomial y ~ poly(x, 2),
+model = "affine" ##
+outputfile<-paste("./slope_leasycan", model, "TRrate_ETREF.csv", sep="_") ### name of the output file
+##############
+
+geno_info$Variety_ID = as.factor(geno_info$Variety_ID)
+
+## loop to save slope values "Estimate" , AIC R2 and R2 adj 
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 1,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[2,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+### here df_summary$coefficients[2,1] because [1,1] = intercept !!! careful
+
+  }   }
+  
+}
+
+
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 2,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[2,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 3,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[2,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 4,] 
+
+   if (nrow(subset_geno_TR_entire_exp) > 0) { ## if i have at least one rep
+     if (sum(is.na(subset_geno_TR_entire_exp$TR_RATE)) !=  nrow(subset_geno_TR_entire_exp)){
+         x <- subset_geno_TR_entire_exp$ETREF
+         y <- subset_geno_TR_entire_exp$TR_RATE
+         
+
+  mod<-lm(formula = formula, data = subset_geno_TR_entire_exp)
+  df_summary<-summary(mod)
+  AIC<-AIC(mod)
+  write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1], df_summary$coefficients[2,1], df_summary$r.squared, df_summary$adj.r.squared,AIC, formula )), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE)
+
+
+  }   }
+  
+}
+
+```
+
+```{r save slope breakpoint model}
+model="breakpoint"
+outputfile<-paste("./slope_leasycan", model, "TRrate_ETREF.csv", sep="_") ### name of the output file
+geno_info$Variety_ID = as.factor(geno_info$Variety_ID)
+
+
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+ subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 1,] ### a  change
+  
+   subset_geno_TR_entire_exp = na.omit(subset_geno_TR_entire_exp)
+   
+      if (nrow(subset_geno_TR_entire_exp) > 0 &&  sum(subset_geno_TR_entire_exp$TR_RATE)) { ## if i have at least one rep
+
+ lin = linear_plateau(subset_geno_TR_entire_exp, ETREF, TR_RATE, tidy = TRUE)
+ header_lin = colnames(lin)
+ 
+    write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1],lin$slope, lin$intercept, lin$plateau, lin$R2, lin$AIC, "breakpoint")), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+  print(i) }
+
+}
+
+
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+ subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 2,] ### a  change
+  
+   subset_geno_TR_entire_exp = na.omit(subset_geno_TR_entire_exp)
+   
+      if (nrow(subset_geno_TR_entire_exp) > 0 &&  sum(subset_geno_TR_entire_exp$TR_RATE)) { ## if i have at least one rep
+
+ lin = linear_plateau(subset_geno_TR_entire_exp, ETREF, TR_RATE, tidy = TRUE)
+ header_lin = colnames(lin)
+ 
+    write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1],lin$slope, lin$intercept, lin$plateau, lin$R2, lin$AIC, "breakpoint")), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+  print(i) }
+
+}
+
+
+
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+ subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 3,] ### a  change
+  
+   subset_geno_TR_entire_exp = na.omit(subset_geno_TR_entire_exp)
+   
+      if (nrow(subset_geno_TR_entire_exp) > 0 &&  sum(subset_geno_TR_entire_exp$TR_RATE)) { ## if i have at least one rep
+
+ lin = linear_plateau(subset_geno_TR_entire_exp, ETREF, TR_RATE, tidy = TRUE)
+ header_lin = colnames(lin)
+ 
+    write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1],lin$slope, lin$intercept, lin$plateau, lin$R2, lin$AIC, "breakpoint")), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+  print(i) }
+
+}
+
+
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+ subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+  subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+  subset_geno_TR_entire_exp = melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+
+
+
+  subset_geno_TR_entire_exp<- subset_geno_TR_entire_exp[subset_geno_TR_entire_exp$REPETITION == 4,] ### a  change
+  
+   subset_geno_TR_entire_exp = na.omit(subset_geno_TR_entire_exp)
+   
+      if (nrow(subset_geno_TR_entire_exp) > 0 &&  sum(subset_geno_TR_entire_exp$TR_RATE)) { ## if i have at least one rep
+
+ lin = linear_plateau(subset_geno_TR_entire_exp, ETREF, TR_RATE, tidy = TRUE)
+ header_lin = colnames(lin)
+ 
+    write.table(t(c(subset_geno_TR_entire_exp$GENOTYPE[1],subset_geno_TR_entire_exp$REPETITION[1],lin$slope, lin$intercept, lin$plateau, lin$R2, lin$AIC, "breakpoint")), file=outputfile, sep=";", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+  print(i) }
+
+}
+
+
+
+
+```
+
+what is the best model ? compare AIC and R² of each model
+
+```{r merge all model results }
+coef_intercept_geno= read.table("slope_leasycan_linear_TRrate_ETREF.csv", sep = ";")
+colnames(coef_intercept_geno)= c("GENOTYPE", "REPETITION","Estimate", "R2", "R2adj", "AIC", "Model")
+coef_intercept_geno$GENO_REP =  paste(coef_intercept_geno$GENOTYPE, coef_intercept_geno$REPETITION, sep = "_")    
+coef_intercept_geno = coef_intercept_geno[!duplicated("GENO_REP" )]
+rownames(coef_intercept_geno) = coef_intercept_geno$GENO_REP
+
+coef_poly_geno = read.table("slope_leasycan_polynomial_TRrate_ETREF.csv", sep = ";")
+colnames(coef_poly_geno)= c("GENOTYPE","REPETITION","Estimate","R2", "R2adj","AIC", "Model")
+coef_poly_geno$GENO_REP =  paste(coef_poly_geno$GENOTYPE, coef_poly_geno$REPETITION, sep = "_")
+coef_poly_geno = coef_poly_geno[!duplicated("GENO_REP" )]
+
+rownames(coef_poly_geno) = coef_poly_geno$GENO_REP
+
+coef_bkpt_geno =read.table("slope_leasycan_breakpoint_TRrate_ETREF.csv", sep = ";")
+colnames(coef_bkpt_geno)= c("GENOTYPE","REPETITION","Estimate", "breakpoint","plateau","R2","AIC", "Model")
+coef_bkpt_geno$GENO_REP =  paste(coef_bkpt_geno$GENOTYPE, coef_bkpt_geno$REPETITION, sep = "_")
+coef_bkpt_geno = coef_bkpt_geno[!duplicated("GENO_REP")]
+rownames(coef_bkpt_geno) = coef_bkpt_geno$GENO_REP
+
+coef_affine_geno = read.table("slope_leasycan_affine_TRrate_ETREF.csv", sep = ";")
+colnames(coef_affine_geno)=c("GENOTYPE","REPETITION","Estimate","R2", "R2adj","AIC", "Model")
+coef_affine_geno$GENO_REP =  paste(coef_affine_geno$GENOTYPE, coef_affine_geno$REPETITION, sep = "_")
+coef_affine_geno = coef_affine_geno[!duplicated("GENO_REP" )]
+rownames(coef_affine_geno) = coef_affine_geno$GENO_REP
+
+## merge everything by GENO_REP
+df = merge(coef_intercept_geno, coef_affine_geno, by = 'row.names', all = TRUE)
+df1 = merge(coef_bkpt_geno, coef_poly_geno, by = 'row.names', all = TRUE)
+
+  
+rownames(df) = df$Row.names
+rownames(df1) = df1$Row.names
+
+df2 =merge(df,df1,by = "row.names",all=T)   
+
+
+df_cleaned= as.data.frame(cbind(df2$GENO_REP.x.x, df2$GENOTYPE.x.x, df2$REPETITION.x.x, 
+                         df2$Estimate.x.x, df2$R2.x.x, df2$AIC.x.x,df2$Model.x.x,
+                         df2$Estimate.y.x, df2$R2.y.x, df2$AIC.y.x, df2$Model.y.x,
+                         df2$Estimate.x.y, df2$R2.x.y, df2$AIC.x.y, df2$Model.x.y,
+                         df2$Estimate.y.y, df2$R2.y.y, df2$AIC.y.y, df2$Model.y.y))
+
+colnames(df_cleaned)= c("GENO_REP", "GENOTYPE", "REPETITION", 
+                         "Estimate_intercept0", "R2_intercept0", "AIC_intercept0","Model_intercept0",
+                         "Estimate_linear", "R2_linear", "AIC_linear", "Model_linear",
+                         "Estimate_bkpt", "R2_bkpt", "AIC_bkpt", "Model_bkpt",
+                        "Estimate_poly", "R2_poly", "AIC_poly", "Model_poly")
+
+coef_all_model = df_cleaned
+rm(df, df1, df2, df_cleaned)
+```
+
+```{r  what is the best model }
+
+AIC = coef_all_model[,grepl("AIC_",names(coef_all_model))]     
+rownames(AIC) = coef_all_model$GENO_REP
+AIC$GENO_REP= rownames(AIC)
+
+AIC <- melt(AIC ,  id.vars = "GENO_REP", variable.name = 'GENO_REP')
+colnames(AIC) = c("GENO_REP","MODEL", "AIC_VALUE")
+AIC$AIC_VALUE<-as.numeric(AIC$AIC_VALUE)
+AIC$MODEL<-as.factor(AIC$MODEL)
+AIC= na.omit(AIC)
+
+p <- ggplot(AIC, aes(x=MODEL, y=AIC_VALUE)) + 
+  geom_boxplot()
+p
+
+
+R2 = coef_all_model[,grepl("R2_",names(coef_all_model))]     
+rownames(R2) = coef_all_model$GENO_REP
+R2$GENO_REP= rownames(R2)
+
+R2 <- melt(R2 ,  id.vars = "GENO_REP", variable.name = 'GENO_REP')
+colnames(R2) = c("GENO_REP","MODEL", "R2_VALUE")
+R2$R2_VALUE<-as.numeric(R2$R2_VALUE)
+R2$MODEL<-as.factor(R2$MODEL)
+R2= na.omit(R2)
+
+p <- ggplot(R2, aes(x=MODEL, y=R2_VALUE)) + 
+  geom_boxplot()
+p
+
+
+# R2 intercept 0 seem better 
+
+
+
+```
+
+```{r comparison AIC}
+# More precisely what is the best model for each pot? 
+coef_all_model$GENO_REP=as.factor(coef_all_model$GENO_REP)
+coef_all_model = na.omit(coef_all_model)
+outputfile<-"./choose_best_model_AIC.txt"
+
+ for ( i in 1:nrow(coef_all_model) ) { 
+  subset<-coef_all_model[i,] 
+ if ( (subset$AIC_bkpt<subset$AIC_intercept0 && subset$AIC_bkpt<subset$AIC_poly  && subset$AIC_bkpt<subset$AIC_linear)==TRUE){ ##if 1 have the lower AIC, better model
+   print("best model = BREAKPOINT ")
+   
+   write.table(t(c(i, subset$AIC_bkpt, subset$AIC_intercept0, subset$AIC_poly, subset$AIC_linear, "best_model_BREAKPOINT")), file=outputfile, sep=",", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+   print(i)
+   }
+  
+  else if ( (subset$AIC_intercept0<subset$AIC_bkpt && subset$AIC_intercept0<subset$AIC_poly && subset$AIC_intercept0<subset$AIC_linear)==TRUE){ 
+   print("best model intercept")
+    write.table(t(c(i, subset$AIC_bkpt, subset$AIC_intercept0, subset$AIC_poly, subset$AIC_linear, "best_model_INTERCEPT0")), file=outputfile, sep=",", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+  print(i) 
+  }
+  
+  else if ( (subset$AIC_poly<subset$AIC_bkpt && subset$AIC_poly<subset$AIC_intercept0 && subset$AIC_poly<subset$AIC_linear)==TRUE){ 
+    print("best model  polynomial")
+    write.table(t(c(i, subset$AIC_bkpt, subset$AIC_intercept0, subset$AIC_poly, subset$AIC_linear, "best_model_POLY")), file=outputfile, sep=",", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+    print(i) 
+  }
+  
+  else if ( (subset$AIC_linear<subset$AIC_bkpt && subset$AIC_linear<subset$AIC_intercept0 && subset$AIC_linear<subset$AIC_poly)==TRUE){ 
+    print("best model = y=ax+b")
+    write.table(t(c(i, subset$AIC_bkpt, subset$AIC_intercept0, subset$AIC_poly, subset$AIC_linear, "best_model_LINEAR")), file=outputfile, sep=",", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+    print(i) 
+   }
+ }
+
+best_model=read.table("choose_best_model_AIC.txt", sep = ",")
+colnames(best_model)=c("GENOTYPE", "AIC_BKPT","AIC_INTERCEPT", "AIC_POLYNOMIAL", "AIC_y=ax+b", "best_model")
+sum(best_model$best_model == "best_model_LINEAR") /nrow(best_model) *100
+sum(best_model$best_model == "best_model_POLY")/nrow(best_model) *100
+sum(best_model$best_model == "best_model_INTERCEPT0")/nrow(best_model) *100
+sum(best_model$best_model == "best_model_BREAKPOINT")/nrow(best_model) *100
+
+
+```
+the best model is y= ax (intercept 0) for 78% of cases based on AIC
+
+```{r comparison R2}
+
+coef_all_model$GENO_REP=as.factor(coef_all_model$GENO_REP)
+coef_all_model = na.omit(coef_all_model)
+outputfile<-"./choose_best_model_R.txt"
+
+ for ( i in 1:nrow(coef_all_model) ) {  ## for each genotype 
+
+  subset<-coef_all_model[i,]
+ if ( (subset$R2_bkpt>subset$R2_intercept0 && subset$R2_bkpt>subset$R2_poly  && subset$R2_bkpt>subset$R2_linear)==TRUE){ 
+    ##if 1 have the higher R2, better model
+   print("best model = BREAKPOINT ")
+   write.table(t(c(i, subset$R2_bkpt, subset$R2_intercept0, subset$R2_poly, subset$R2_linear, "best_model_BREAKPOINT")), file=outputfile, sep=",", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+   print(i)
+   }
+  
+  else if ( (subset$R2_intercept0>subset$R2_bkpt && subset$R2_intercept0>subset$R2_poly && subset$R2_intercept0>subset$R2_linear)==TRUE){ 
+   print("best model intercept")
+    write.table(t(c(i, subset$R2_bkpt, subset$R2_intercept0, subset$R2_poly, subset$R2_linear, "best_model_INTERCEPT0")), file=outputfile, sep=",", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+  print(i) 
+   }
+  else if ( (subset$R2_poly>subset$R2_bkpt && subset$R2_poly>subset$R2_intercept0 && subset$R2_poly>subset$R2_linear)==TRUE){ 
+    print("best model  polynomial")
+    write.table(t(c(i, subset$R2_bkpt, subset$R2_intercept0, subset$R2_poly, subset$R2_linear, "best_model_POLY")), file=outputfile, sep=",", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+    print(i) 
+  }
+  
+  else if ( (subset$R2_linear>subset$R2_bkpt && subset$R2_linear>subset$R2_intercept0 && subset$R2_linear>subset$R2_poly)==TRUE){ 
+    print("best model = y=ax+b")
+    write.table(t(c(i, subset$R2_bkpt, subset$R2_intercept0, subset$R2_poly, subset$R2_linear, "best_model_LINEAR")), file=outputfile, sep=",", quote=FALSE, col.names=F, row.names=F, append=TRUE) ####
+    print(i) 
+   }
+ }
+
+best_model=read.table("choose_best_model_R.txt", sep = ",")
+colnames(best_model)=c("GENOTYPE", " R_BKPT"," R_INTERCEPT", " R_POLYNOMIAL", " R_LINEAR", "best_model")
+sum(best_model$best_model == "best_model_LINEAR") /nrow(best_model) *100
+sum(best_model$best_model == "best_model_POLY") /nrow(best_model) *100
+sum(best_model$best_model == "best_model_INTERCEPT0") /nrow(best_model) *100
+sum(best_model$best_model == "best_model_BREAKPOINT") /nrow(best_model) *100
+
+
+```
+best R² in 99% cases with intercept 0 
+Conclusion : Linear model is the most adapted to describe TRrate - ETref relation. Plot the results with linear regression!
+
+```{r plot per genotype, eval = FALSE}
+formula =   y~(0+x)
+model = "linear"
+## loop to save slope values "Estimate" , AIC R2 and R2 adj 
+for ( i in 1: nlevels(geno_info$Variety_ID) ) {  ## for each genotype
+  subset_geno_TR_entire_exp=TR_entire_exp[,grepl(levels(geno_info$Variety_ID)[i],names(TR_entire_exp))]
+   subset_geno_TR_entire_exp= cbind(TR_entire_exp$ETREF_MM_H, subset_geno_TR_entire_exp)
+
+  subset_geno_TR_entire_exp = reshape2::melt(subset_geno_TR_entire_exp ,  id.vars = "TR_entire_exp$ETREF_MM_H", variable.name = 'repetition')
+  colnames(subset_geno_TR_entire_exp)= c("ETREF", "REPETITION", "TR_RATE")
+  subset_geno_TR_entire_exp[c('GENOTYPE', 'REPETITION')] <- str_split_fixed(subset_geno_TR_entire_exp$REPETITION,"..WW_R", n = 2)
+  x <- subset_geno_TR_entire_exp$ETREF
+  y <- subset_geno_TR_entire_exp$TR_RATE
+  png(file = paste(i,levels(geno_info$Variety_ID)[i],model,".png", sep = "_"))
+  plot<-
+   ggplot(data = subset_geno_TR_entire_exp, aes(x, y, color=REPETITION))+
+    ylab("TR rate (mm h-1 m-2)")+
+    xlab("ETref (mm.h-1)")+
+    labs(title = paste("TR rate - ETref N°",i, levels(geno_info$Variety_ID)[i]))+
+    geom_point()+  
+    geom_smooth(method = "lm", formula = formula)+ 
+    stat_regline_equation(aes(label =  paste(..eq.label.., ..adj.rr.label.., sep = "~~~~")), size=3, formula = formula)  
+  print(plot)
+  dev.off()
+  print(i)
+  
+}
+```
+
+```{r distribution anova trait - genotypes}
+coef_intercept_TRrate= coef_intercept_geno
+# coef_intercept_TRrate = read.table(paste("./slope_leasycan", model, "TRrate_ETREF.csv", sep="_"), sep = ";", fill = TRUE)
+
+colnames(coef_intercept_TRrate)= c("GENOTYPE","REPETITION","Estimate_intercept","R2","R2adj","AIC", "Model","GENO_REP")
+coef_intercept_TRrate$GENOTYPE = as.factor(coef_intercept_TRrate$GENOTYPE)
+coef_intercept_TRrate$REPETITION = as.factor(coef_intercept_TRrate$REPETITION)
+coef_intercept_TRrate = na.omit(coef_intercept_TRrate)
+
+
+min(coef_intercept_TRrate$R2)
+max(coef_intercept_TRrate$R2)
+mean(coef_intercept_TRrate$R2)
+
+coef_intercept_TRrate = coef_intercept_TRrate %>% arrange(coef_intercept_TRrate$R2)
+hist(coef_intercept_TRrate$R2, xlab = "R² slope") ## there are a big variation among R² to represent
+
+## keep only if R2 > 0.75 (still 834 obs remaining and assure us a good data representation
+coef_intercept_TRrate$Estimate_intercept[coef_intercept_TRrate$R2 < 0.75] <- NA
+coef_intercept_TRrate= na.omit(coef_intercept_TRrate)
+
+
+# if 
+coef_intercept_TRrate$Estimate_intercept[coef_intercept_TRrate$Estimate_intercept < 0.1] <- NA
+
+hist(coef_intercept_TRrate$Estimate_intercept, xlab = "Slope TRrate- ETref", main = "Histogram of Slope Rrate- ETref ") # normal distribution
+ 
+
+
+model<-lm(Estimate_intercept~GENOTYPE, data = coef_intercept_TRrate)
+aov<-Anova(model)
+print(aov) 
+
+#Response: Estimate_intercept
+#           Sum Sq  Df F value  Pr(>F)  
+#GENOTYPE  0.46407 314  1.2118 0.02744 *
+#Residuals 0.63177 518                  
+
+# 
+n = 4 ## number of samples
+H2=(aov$`Sum Sq`[1]/(aov$`Sum Sq`[1]+(aov$`Sum Sq`[2]/n)))
+H2
+
+mean_estimate = aggregate(Estimate_intercept~GENOTYPE, data = coef_intercept_TRrate, FUN=mean)
+
+```
+
+
+
