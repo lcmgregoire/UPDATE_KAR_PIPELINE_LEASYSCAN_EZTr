@@ -5,7 +5,7 @@ This project concerns an update of the pipeline described in the article :Kar, S
 Link GITHUB to the original pipeline : https://github.com/KSoumya/EZTr
 
 The script developed by Kar et al. 2020 concerns the analysis of data from the HTP Leasyscan platform. This platform consists of : 
-- .... load cells able of measuring weights at 15min intervals.  
+- +/- 1300 load cells able of measuring weights at 15min intervals.  
 - PlantEye scanner for monitoring architecture/ plant growth traits (especially leaf area) . The scanner is capable of taking 2 measurements per day. 
 - Weather data monitoring, at 15-minute intervals.
 
