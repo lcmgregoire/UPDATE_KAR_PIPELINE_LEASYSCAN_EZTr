@@ -1,0 +1,3867 @@
+---
+title: "Update Kar et al. 2020 pipeline"
+author: "Laura Gregoire"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+###### 1. WD, packages, functions, define files path and parameters of your experiment
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+options(repos = c(CRAN = "https://cran.r-project.org"))
+# install.packages("tinytex")
+# tinytex::install_tinytex()
+tinytex::is_tinytex()
+rm(list = ls())
+```
+
+
+
+```{r working directory}
+rm(list = ls())
+path <- readline(prompt = "Define working directory. Required format C:/Users/.../: ") 
+#example "C:/Users/2021lg003/Documents/ANALYSIS_UPDATE_KAR_PIPELINE_LEASYSCAN/"
+path <- gsub('^"|"$', '', path) 
+setwd(dir = path)
+cat("Working directory set to:", getwd(), "\n")
+
+
+```
+
+```{r package and functions, echo=FALSE, message=FALSE, warning=FALSE}
+# don't forget to use install.packages the first time... 
+# Load all the functions #
+print("Load functions and packages")
+library("easypackages")
+library("devtools")
+# # # 
+# install_github("ICRISAT-GEMS/LoadCellDataProcessing")
+# install_github("ICRISAT-GEMS/statgenHTP")
+# install_github("ICRISAT-GEMS/platformDataAnalysis")
+# install_github("ICRISAT-GEMS/SpaTemHTP")
+# install_github("ICRISAT-GEMS/LSDataProcessing")
+
+
+libraries("readxl", "hms", "xts", "dplyr","mgcv","LoadCellDataProcessinglo", "wavelets",  
+          "signal", "tidyverse", "zoo", "h2o", "sqldf", "ggplot2", "plyr",
+          "lubridate", "plantecophys", "highfrequency", "stringr","chron", 
+          "nonlinearTseries", "tsfeatures", "splitstackshape", "psych", "fixr", 
+          "SpATS", "reshape2", "tidyr", "nlme", "locfit", "gss", "factoextra", 
+          "gridExtra", "mgcv", "statgenHTP", "magick", "segmented", "MASS", "rstatix", "statgenSTA", 
+          "berryFunctions", "hms", "future","LoadCellDataProcessing", "platformDataAnalysis", "LSDataProcessing", "SpaTemHTP", "data.table", "ggpmisc")
+
+
+
+# Get the list of all R scripts in the "functions" folder
+script_folder <- "./functions/"
+script_files <- list.files(paste0(path, script_folder), pattern = "\\.R$", full.names = TRUE)
+invisible(lapply(script_files, source))
+colMax <- function(data) sapply(data, max, na.rm = TRUE) ## Function to find max values
+colMin <- function(data) sapply(data, min, na.rm = TRUE) ## Function to find min values
+print("All functions and packages loaded successfully")
+
+```
+
+```{r Define path to store results}
+opPATH.obj= "./saved_objects/"
+opPATH <- "./results/"
+opPATH.smth="./results/smthFeaturesTimeSeries/"
+opPATH.raw="./results/rawFeaturesTimeSeries/"
+opPATH.profile="./results/profile/"
+opPATH.spats="./results/STAGENHTP/"
+
+opPATH.data= "./data/"
+
+
+  if (!dir.exists(opPATH)) dir.create(opPATH, recursive = TRUE)
+  if (!dir.exists(opPATH.obj)) dir.create(opPATH.obj, recursive = TRUE)
+  if (!dir.exists(opPATH.smth)) dir.create(opPATH.smth, recursive = TRUE)
+  if (!dir.exists(opPATH.raw)) dir.create(opPATH.raw, recursive = TRUE)
+  if (!dir.exists(opPATH.profile)) dir.create(opPATH.profile, recursive = TRUE)
+  if (!dir.exists(opPATH.spats)) dir.create(opPATH.spats, recursive = TRUE)
+
+
+
+```
+
+```{r define files path}
+print("define file paths and names. Input files for loadcell weights, climate data and metadata are mandatory. others are experiment and platform-dependent. (if the file is missing, press enter ) ")
+
+metad_file <- readline(prompt = "Define path to metadata file: ") 
+m_lc_file <- readline(prompt = "Define path to loadcell file: ") 
+climate_file <- readline(prompt = "Define path to climate file: ") 
+planimeter_file = readline(prompt = "Define path to planimeter file: ") 
+sensor_file <- readline(prompt = "Define path to sensor file: ") 
+PE_file <- readline(prompt = "Define path to planteye file: ") 
+design_file <- readline(prompt = "Define path to layout design file: ") 
+
+
+ # for metad_file : "./data/Exp60-SORGHUM-ICRISAT/Exp60_Sorghum_Refset_IRD_Trial_Sep_2023-477_mm_20231009_metadata.csv"
+# for m_lc_file : "./data/Exp60-SORGHUM-ICRISAT/Exp60_Sorghum_Refset_IRD_Trial_Sep_2023-477_mm_20231009_DroughtSpotter.csv"
+# for climate_file : "./data/Exp60-SORGHUM-ICRISAT/Exp60_Sorghum_Refset_IRD_Trial_Sep_2023-477_mm_20231009_Climate Datalogger.csv"
+# for planimeter_file : "./data/Exp60-SORGHUM-ICRISAT/Exp60_planimeter_dry_biomass.csv"
+# for sensor_file : "./data/Exp60-SORGHUM-ICRISAT/Exp60_Sorghum_Refset_IRD_Trial_Sep_2023-477_mm_20231009_sensorUnitMap.csv"
+# for pe_file : "./data/Exp60-SORGHUM-ICRISAT/Exp60_Sorghum_Refset_IRD_Trial_Sep_2023-477_mm_20231009_planteye.csv"
+# for design_file : "./data/Exp60-SORGHUM-ICRISAT/Exp60_design_exp.csv"
+
+
+metad_file_path = paste0(path,metad_file)
+metad_file_path = gsub('/\".', '',metad_file_path )
+metad_file_path = gsub('\"','',metad_file_path )
+
+m_lc_file_path = paste0(path,m_lc_file)
+m_lc_file_path = gsub('/\".', '',m_lc_file_path )
+m_lc_file_path = gsub('\"','',m_lc_file_path )
+
+climate_file_path = paste0(path,climate_file)
+climate_file_path = gsub('/\".', '',climate_file_path )
+climate_file_path = gsub('\"','',climate_file_path )
+
+
+sensor_file_path = paste0(path,sensor_file)
+sensor_file_path = gsub('/\".', '',sensor_file_path )
+sensor_file_path = gsub('\"','',sensor_file_path )
+
+
+
+```
+
+```{r Create meta.d}
+### Create meta.d ###
+print("Load metadata file")
+meta.d <- read.csv(metad_file_path, sep = ";")
+meta.d <- distinct(meta.d) #
+meta.d = meta.d[,c("unit", "old_unit", "Experiment", "Treatment","Species","Genotype","G..Alias", "Replicates")]
+str(meta.d)
+
+print("The result here should be : unit (chr), old_unit(chr), Experiment (chr), Treatment (chr),Species (chr),Genotype (chr  or int),G..Alias(chr or int), Replicates (int). Is it good? ")
+
+write.csv(meta.d, paste0(path, "./data/meta.d.csv"))
+save(meta.d, file = paste0(path, "./meta.d.RData"))
+load(file = paste0(path, "./meta.d.RData"))
+
+length(unique(meta.d$unit))
+
+```
+
+```{r Create m.lc}
+
+
+print("Load the loadcell weight measurement file. Be careful with m.lc$timestamp format")
+ m.lc <- read.csv( m_lc_file_path, sep = ",") ## be aware that the separator can change , or ; or ... ? 
+if (!"timestamp" %in% colnames(m.lc)) {
+  m.lc$timestamp <- m.lc$Timestamp
+}
+
+if (!"unit" %in% colnames(m.lc)) {
+  m.lc$unit <- m.lc$Row
+
+} 
+
+if (!"Weight_g" %in% colnames(m.lc)) {
+  m.lc$Weight_g <- m.lc$Weight.g
+}
+ 
+ if (("Date" %in% colnames(m.lc)) && ("Hour" %in% colnames(m.lc))) {
+  m.lc$Date <- ymd(m.lc$Date) ## be aware that the format can change ymd, dmy... based on platform
+m.lc$timestamp= as.POSIXct(paste( m.lc$Date, m.lc$Hour, tz= "utc"))
+} 
+head(m.lc$timestamp) # check the date/time format from head(m.lc) and run ymd_hms/dmy_hm
+m.lc$timestamp <- as.POSIXct(m.lc$timestamp) #Format here "27-12-19 16:00" ## if different adapt to proposed format d: day, m:month, y: year, h:hour, m: miprint("The format here should be YYYY-MM-DD HH:MM:SS UTC/CEST" )
+head(m.lc$timestamp)
+
+new.lc<-as.data.frame(matrix(nrow = nrow(m.lc), ncol = 4))
+new.lc[,1] <- m.lc$timestamp
+new.lc[,2] = m.lc$unit 
+new.lc[,3] = m.lc$unit 
+# new.lc[,3] = str_replace_all(new.lc[,3], "B-","")
+new.lc[,4]= m.lc$Weight_g
+colnames(new.lc) = c("timestamp",	"unit",	"Row",	"Weight_g")
+
+
+
+```
+
+```{r define time interval}
+seq_by <- readline(prompt = "Enter desired time (in min) interval, e.g. 15/30/45/60 between measurements : ")  # example  15
+
+## no 15 min interval !! 
+seq_by=as.numeric(seq_by)
+cat("Time interval between measurements is  :",seq_by, "minutes ")
+```
+
+```{r merge using unit format}
+print("The next step is to merge the metadata with the loacell file, using the “unit” column in both files." )
+# meta.d<-meta.d %>% arrange(unit) ##trie par ordre croissant de pente
+# m.lc<-m.lc %>% arrange(unit) ##trie par ordre croissant de pente
+
+unique(head(meta.d$unit))
+unique(new.lc$unit)[1:6]
+
+print("Do the first units have the same name in the meta.d and m.lc files?")
+```
+
+```{r if you have different number formatting}
+#if you have different number formatting, as following 131:10:01 and "131:10:1" or "131:7:01" and "131:07:01"
+# Fix formatting issues in m.lc$unit
+new.lc$unit <- gsub(":(\\d)(?=:\\d{1,2}$)", ":0\\1", new.lc$unit, perl = TRUE)  # Fix middle number
+new.lc$unit <- gsub(":(\\d)$", ":0\\1", new.lc$unit)  # Fix last number
+
+unique(head(meta.d$unit))
+unique(new.lc$unit)[1:6]
+
+
+```
+
+```{r merge metadata and load cell data }
+## merge metadata and load cell data 
+new.lc$genotype = NA
+new.lc$g_alias =NA
+new.lc$treatment =NA
+
+
+for (i in 1:nrow(new.lc)) {
+  r.ind <- which(meta.d$unit == new.lc$unit[i])
+  if (length(r.ind) == 0) next  
+  new.lc$genotype[i] <- unique(meta.d$Genotype[r.ind])
+  new.lc$g_alias[i] <- unique(meta.d$G..Alias[r.ind])
+  new.lc$treatment[i] <- unique(meta.d$Treatment[r.ind])
+  if (i %% 100 == 0) cat("row : ", i, "\n")  # avoid froze screen
+}
+
+
+
+m.lc <- new.lc
+
+
+str(m.lc)
+print("The result here should be :timestamp (POSIXct),unit (chr),Row (chr),Weight_g (num),genotype (chr or int),g_alias (chr or int),treatment(chr). Is it good? ")
+
+
+write.csv(m.lc, paste0(path, "./data/m.lc.csv"))
+save(m.lc, file = paste0(path, "./data/m.lc.RData"))
+load(file = paste0(path, "./data/m.lc.RData"))
+
+length(unique(m.lc$unit)) ## i have 432 LC in the m.lc. Only 400 with metadata... 
+```
+
+```{r define first date}
+# NOTE 1: Enter the day BEFORE the start of the experiment. Otherwise the next steps will "cut" the first day of measurement 
+fdt <- readline(prompt = "Enter FIRST DATE of experiment (required format: YYYY-MM-DD): ") #day after last thinning 2023-09-27
+
+firstDate=as.Date(as.character(fdt)) 
+```
+
+```{r define last date}
+ldt <- readline(prompt = "Enter LAST DATE of experiment (required format: YYYY-MM-DD): ") # example harvest 2023-10-18
+lastDate=as.Date(as.character(ldt)) 
+
+```
+
+```{r define average weight}
+
+avg_wgt <- readline(prompt = "Enter an expected weight, in g, just a rough estimate: ") # example 70000
+avg_wgt=as.numeric(avg_wgt)
+cat("The expected weight on a loadcell is roughly : ",avg_wgt, "g ")
+```
+
+```{r define irrigation days}
+## Irrigation dates 
+print("Enter irrigation days. See comments for more info")
+
+# NOTE 1: Enter date(s) of irrigation or when data is extremely noisy.
+# NOTE 2: If no such date, enter LAST DATE of experiment
+# NOTE 3: The entire date will be erased: in the case of evening irrigation, it may not be necessary to erase the entire date. This will depend on the quantity and quality of your data.
+irrg.dts <- readline(prompt = "Enter irrigation days (required format : c(YYYY-MM-DD, ... ) : ") 
+
+#EXEMPLE  : 
+# c("2023-09-30","2023-10-03","2023-10-06", "2023-10-10", "2023-10-13", "2023-10-17", "2023-10-18")
+irrg.dts <- gsub('c\\(\\"|\\")', '', irrg.dts)
+
+cat("The irrigation days or noisy days that need to be removed are :"  ,irrg.dts, "(or last day of experience if none)")
+
+# remove 'c('  ')' "" \
+irrg.dts <- gsub("^c\\(|\\)$", "", irrg.dts)
+irrg.dts <- gsub("\"", "", irrg.dts)
+irrg.dts <- gsub(" ", "", irrg.dts)
+irrg.dts <- unlist(strsplit(irrg.dts, split = ","))
+
+irrg.dts <- as.Date(irrg.dts)
+
+save(irrg.dts, file = paste0(opPATH.obj, "/irrg.dts.RData"))
+load(file = paste0(opPATH.obj, "/irrg.dts.RData"))
+
+```
+
+```{r date 1 and 2}
+## Date 1 and 2 : format "YYYY-MM-DD HH:MM:SS"
+Date1 = paste(as.character(firstDate) , "00:00:00")
+Date2 = paste(as.character(lastDate), "23:30:00")
+Date1<-ymd_hms(Date1)  
+Date2<-ymd_hms(Date2)
+Date1
+Date2
+dates <- seq(Date1, Date2, by= paste(seq_by, "mins"))
+print("The format should be YYYY-MM-DD HH:MM:SS UTC. Is it correct?")
+
+
+save(dates, file = paste0(opPATH.obj, "/dates.RData"))
+load(file = paste0(opPATH.obj, "/dates.RData"))
+
+```
+
+```{r  load climate data}
+
+### Create Climate data ###
+print("Load climatic data. They differ according to the measurement platforms (IRD/ICRISAT). More information in comments")
+# NOTE 1 : On the ICRISAT platform, we have climatic data from various sensors that are not adapted to the 15min format, such as LC weighings. The first step is therefore to adapt these data to the 15-minute format, and to merge the data from several sensors into a single dataframe. 
+#  In the case of another platform such as IRD PLATFORM, this problem is absent.
+
+
+platform <- readline(prompt = "What platform are you using ? Required : IRD or ICRISAT  : ") 
+if ((platform ==  "ICRISAT") == TRUE) {
+  m_lc_file_path
+  clm.df <- read.csv(climate_file_path)
+sensor.unit.df <- read.csv(sensor_file_path)
+
+clm.df.mapped <- clm.df[clm.df$sensor %in% sensor.unit.df$sensor, ]
+unq.clm.var <- unique(clm.df.mapped$variable)
+
+
+# "Temperature (Deg C)" : unq.clm.var[1]
+temperature.DF <-  subset(clm.df.mapped, variable == unq.clm.var[1])
+temperature.DF$timestamp = ymd_hms(temperature.DF$timestamp)
+temperature.DF$timestamp <-   floor_date(temperature.DF$timestamp , "15 minutes")
+# create empty dataframe to store all values
+temp_df =   as.data.frame(matrix(nrow = length(unique(temperature.DF$timestamp)), 
+                                  ncol = 2))
+colnames(temp_df) =c("value","timestamp")
+temp_df$value = as.numeric(temp_df$value)
+temp_df$timestamp = as.POSIXct(temp_df$value)
+
+
+for (i in 1:length( unique(temperature.DF$timestamp))) {
+  subset_timestamp =  subset(temperature.DF, timestamp == unique(temperature.DF$timestamp)[i])
+  
+  #### some outliers in the data : negative value 
+  subset_timestamp[subset_timestamp < 0] <- NA
+  subset_timestamp = na.omit(subset_timestamp)
+  
+  
+  subset_timestamp_avg =  subset_timestamp %>%
+  summarise(value = mean(value))
+  subset_timestamp_avg$timestamp = as.POSIXct(unique(temperature.DF$timestamp)[i])
+
+temp_df[i,] = subset_timestamp_avg
+}
+  
+
+
+
+
+# "Relative Humidity (%)" :unq.clm.var[2]
+RH.DF <-  subset(clm.df.mapped, variable == unq.clm.var[2])
+RH.DF$timestamp = ymd_hms(RH.DF$timestamp)
+RH.DF$timestamp <-   floor_date(RH.DF$timestamp , "15 minutes")
+# create empty dataframe to store all values
+RH_df =   as.data.frame(matrix(nrow = length(unique(RH.DF$timestamp)), 
+                                  ncol = 2))
+colnames(RH_df) =c("value","timestamp")
+RH_df$value = as.numeric(RH_df$value)
+RH_df$timestamp = as.POSIXct(RH_df$value)
+
+
+for (i in 1:length( unique(RH.DF$timestamp))) {
+  subset_timestamp =  subset(RH.DF, timestamp == unique(RH.DF$timestamp)[i])
+  
+  #### some outliers in the data : negative value 
+  subset_timestamp[subset_timestamp < 0] <- NA
+  subset_timestamp = na.omit(subset_timestamp)
+  
+  subset_timestamp_avg =  subset_timestamp %>%
+  summarise(value = mean(value))
+  subset_timestamp_avg$timestamp = as.POSIXct(unique(RH.DF$timestamp)[i])
+
+RH_df[i,] = subset_timestamp_avg
+}
+  
+
+
+
+
+
+
+# "Flux Density (W/m^2)" : unq.clm.var[4]
+SR.DF <-  subset(clm.df.mapped, variable == unq.clm.var[4])
+SR.DF$timestamp = ymd_hms(SR.DF$timestamp)
+SR.DF$timestamp <-   floor_date(SR.DF$timestamp , "15 minutes")
+# create empty dataframe to store all values
+SR_df =   as.data.frame(matrix(nrow = length(unique(SR.DF$timestamp)), 
+                                  ncol = 2))
+colnames(SR_df) =c("value","timestamp")
+SR_df$value = as.numeric(SR_df$value)
+SR_df$timestamp = as.POSIXct(SR_df$value)
+
+
+for (i in 1:length( unique(SR.DF$timestamp))) {
+  subset_timestamp =  subset(SR.DF, timestamp == unique(SR.DF$timestamp)[i])
+  
+  #### some outliers in the data : negative value 
+  subset_timestamp[subset_timestamp < 0] <- NA
+  subset_timestamp = na.omit(subset_timestamp)
+  
+  subset_timestamp_avg =  subset_timestamp %>%
+  summarise(value = mean(value))
+  subset_timestamp_avg$timestamp = as.POSIXct(unique(SR.DF$timestamp)[i])
+
+SR_df[i,] = subset_timestamp_avg
+}
+  
+
+
+
+
+
+# "Windspeed (meters/second)" :unq.clm.var[5]
+WS.DF <-  subset(clm.df.mapped, variable == unq.clm.var[5])
+WS.DF$timestamp = ymd_hms(WS.DF$timestamp)
+WS.DF$timestamp <-   floor_date(WS.DF$timestamp , "15 minutes")
+# create empty dataframe to store all values
+WS_df =   as.data.frame(matrix(nrow = length(unique(WS.DF$timestamp)), 
+                                  ncol = 2))
+colnames(WS_df) =c("value","timestamp")
+WS_df$value = as.numeric(WS_df$value)
+WS_df$timestamp = as.POSIXct(WS_df$value)
+
+
+for (i in 1:length( unique(WS.DF$timestamp))) {
+  subset_timestamp =  subset(WS.DF, timestamp == unique(WS.DF$timestamp)[i])
+  
+  #### some outliers in the data : negative value 
+  subset_timestamp[subset_timestamp < 0] <- NA
+  subset_timestamp = na.omit(subset_timestamp)
+  
+  subset_timestamp_avg =  subset_timestamp %>%
+  summarise(value = mean(value))
+  subset_timestamp_avg$timestamp = as.POSIXct(unique(WS.DF$timestamp)[i])
+
+WS_df[i,] = subset_timestamp_avg
+}
+  
+
+
+temp_df$timestamp <- as.POSIXct(temp_df$timestamp, tz = "UTC")
+RH_df$timestamp <- as.POSIXct(RH_df$timestamp, tz = "UTC")
+SR_df$timestamp <- as.POSIXct(SR_df$timestamp,tz = "UTC")
+WS_df$timestamp <- as.POSIXct(WS_df$timestamp, tz = "UTC")
+
+names(temp_df)[names(temp_df) == "value"] <- "Temp"
+names(RH_df)[names(RH_df) == "value"] <- "RH"
+names(SR_df)[names(SR_df) == "value"] <- "SR"
+names(WS_df)[names(WS_df) == "value"] <- "WS"
+
+
+dfs <- list(temp_df, RH_df, SR_df, WS_df)
+lapply(dfs, function(df) names(df))  #check colnames before merge
+lapply(dfs, function(df) class(df$timestamp))  # check class before merge
+sapply(dfs, nrow)  
+
+
+weather12 <- merge(dfs[[1]], dfs[[2]], by = "timestamp", all = TRUE)
+weather123 <- merge(weather12, dfs[[3]], by = "timestamp", all = TRUE)
+weather <- merge(weather123, dfs[[4]], by = "timestamp", all = TRUE)
+
+
+
+## add date and VPD col
+weather$Date = date(weather$timestamp)
+weather <- weather[, c("Date", setdiff(names(weather), "Date"))]
+weather$VPD = NA
+names(weather)[names(weather) == "timestamp"] <- "TS"
+weather <- weather[, c("Date", "TS", "Temp", "RH", "VPD", "SR", "WS")]
+
+write.table(weather, file = paste0(opPATH.data, "weather_data_sowing_to_harvest.csv"), sep = ";", dec = ".", row.names = F)
+
+# Subset weather data only for time experiment #
+weather <- subset(weather, TS %in% dates)
+weather <- weather[!as.Date(weather$Date) %in% irrg.dts, ]
+
+
+# remove row of LC dataframe out of measurmeent period
+## need that timestamp of dates and LC fitted
+
+write.table(weather, file = paste0(opPATH.data,"climate_raw.csv" ), sep = ";", dec = ".", row.names = F)
+  
+clm.n =  weather
+
+## weather s'arrete au 2025-03-12 11:00:00 mais poids continue jusqu'a 23:30
+# donc TS = 1293 et ce n'est pas problematique
+  
+nrow(weather)
+}
+if ((platform ==  "IRD") == TRUE) {
+  # clm.n <- read.csv(paste0(path, climate_file), sep = ";", dec = ".")
+  clm.n <- read.csv(climate_file_path, sep = ";", dec = ".")
+  
+  clm.n <- clm.n[,1:7]
+  clm.n$Date <- dmy(clm.n$Date)
+  clm.n$TS <- ifelse(grepl("^\\d{2}:\\d{2}$", clm.n$TS), paste0(clm.n$TS, ":00"), clm.n$TS)
+  # clm.n$TS <- lubridate::hms(clm.n$TS)
+  clm.n$RH <- as.numeric(substr(clm.n$RH, 1, 2))
+  }
+
+str(clm.n)
+print("Regardless of the source of climate data, the result here should be : Date (YYYY-MM-DD),TS (POSIXct or hms),Temp (num),RH (num),VPD (empty) ,SR (num),WS(num). Is it good? ")
+
+write.csv(clm.n, paste0(path, "./data/climate.csv"))
+save(clm.n, file = paste0(path, "./data/climate.RData"))
+load(file = paste0(path, "./data/climate.RData"))
+
+allData <- list(m.lc = m.lc, meta.d = meta.d, climate = clm.n) 
+
+```
+
+```{r load planimeter data}
+planimeter_data <- readline(prompt = "Do you have planimeter data to integrate? Required YES or NO  : ") 
+if ((planimeter_data == "YES")==TRUE) {
+  planimeter_file_path = paste0(path,planimeter_file)
+  planimeter_file_path = gsub('/\".', '',planimeter_file_path )
+planimeter_file_path = gsub('\"','',planimeter_file_path )
+
+  final_LA <- read.csv(planimeter_file_path, sep = ";")
+  allData <- list(m.lc = m.lc, meta.d = meta.d, climate = clm.n, final_LA = final_LA )
+} 
+
+save(allData, file = paste0(path, "./data/allData.RData"))
+load(file = paste0(path, "./data/allData.RData")) 
+```
+
+```{r load planteye and design data - save }
+
+planteye_save <- readline(prompt = "Do you have PlantEye data to integrate? Required YES or NO  : ") 
+if ((planteye_save == "YES")==TRUE) {
+  PE_file_path = paste0(path,PE_file)
+  PE_file_path = gsub('/\".', '',PE_file_path )
+PE_file_path = gsub('\"','',PE_file_path )
+
+design_file_path = paste0(path,design_file)
+  design_file_path = gsub('/\".', '',design_file_path )
+design_file_path = gsub('\"','',design_file_path )
+
+  
+  pe.df <- read.csv(PE_file_path,sep = ";")
+    d_exp <- read.csv(design_file_path, sep = ";")
+
+  
+  if ((planteye_save == "NO") == TRUE) {
+  allData <- list(m.lc = m.lc, meta.d = meta.d, climate = clm.n,
+                  sensor.unit.df = sensor.unit.df) }
+  
+   if ((planteye_save == "YES") == TRUE) {
+  allData <- list(m.lc = m.lc, meta.d = meta.d, climate = clm.n,
+            pe.df = pe.df,  final_LA = final_LA, design= d_exp) }
+  
+}
+
+save(allData, file = paste0(path, "./data/allData.RData"))
+load(file = paste0(path, "./data/allData.RData"))
+
+```
+
+###### 2. Now that the parameters have been defined, we can prepare the loadcell data
+
+```{r I : Prepare the LC data and meta data}
+print("Stage-I: Process LC data and generate ETr matrix")
+st.time <- Sys.time()
+
+
+### Prepare the LC data and meta data
+print("Load  and prepare input data")
+load("./data/allData.RData")
+
+## remove from beggining irrigation dates
+m.lc = allData$m.lc
+
+m.lc$Date = as.Date(m.lc$timestamp)
+
+m.lc <- m.lc[!as.Date(m.lc$Date) %in% irrg.dts, ]
+
+
+# remove row of LC dataframe out of measurmeent period
+## need that timestamp of dates and LC fitted
+
+dates = as.POSIXct(dates)
+m.lc$timestamp <- floor_date(m.lc$timestamp, unit = "minute")
+m.lc$timestamp = as.POSIXct(m.lc$timestamp)
+m.lc <- subset(m.lc, m.lc$timestamp %in% dates)
+
+
+nrow(m.lc)
+length(unique(m.lc$unit))
+
+meta.d <- allData$meta.d 
+# Get Genotype and Exp design metadata
+species.nm <- unique(meta.d$Species) # Get the list of species from the metadata
+meta.d.sp <- meta.d[meta.d$Species==species.nm[1], ] # Include the species ID as per the data NEED TO BE IN COMMENT HERE AS WE HAVE 2 SPECIES (come from Kar et al pipeline version, should i remove it ? )
+noEntrySecs <- which(!unique(m.lc$unit) %in% unique(meta.d.sp$unit)) # Find sectors with missing metadata
+noEntrySecNms <- unique(m.lc$unit)[noEntrySecs]
+m.lc <- m.lc[! m.lc$unit %in% noEntrySecNms, ] # Remove sectors-without-metadata from original loadcells file
+
+length(unique(m.lc$unit)) ## 200 LC saved, keep only PM LC 
+
+
+
+# Extract matrix of loadcell data 
+LC.MAT.OP <- extractRawLCmatrix(x = m.lc, y = meta.d.sp, 
+                                s=firstDate, z = lastDate, 
+                                inter = seq_by)
+
+####### This function processes load cell time-series data (from a data logger measuring weight over time, e.g., for plant growth experiments). It cleans, aligns, and aggregates data across multiple sectors (units), then returns a matrix of weight values (Weight_g) over time (TS) for each sector/unit.
+
+
+
+LC.MAT.f <- LC.MAT.OP$LC.MAT.f
+
+
+
+LC.MAT.TSinfo <- LC.MAT.OP$LC_tsmeta
+
+LC.MAT.f <- LC.MAT.f[!as.Date(LC.MAT.f$TS) %in% irrg.dts, ]
+LC.MAT.f <- subset(LC.MAT.f, LC.MAT.f$TS %in% dates)
+ncol(LC.MAT.f)-1 #  200 LC !
+
+
+
+
+
+save(LC.MAT.f, file = paste(opPATH.obj, "LC.MAT.f.RData", sep = ""))
+save(LC.MAT.TSinfo, file = paste(opPATH.obj, "LC.MAT.TSinfo.RData", sep = ""))
+load( file = paste(opPATH.obj, "LC.MAT.f.RData", sep = ""))
+load( file = paste(opPATH.obj, "LC.MAT.TSinfo.RData", sep = ""))
+
+
+TS = LC.MAT.f$TS # timestamp without irrigation during measurement period
+save(TS, file = paste(opPATH.obj, "TS.RData", sep = ""))
+
+length(TS) # number of measurement in timestamp
+
+```
+
+```{r outlier WEIGHT detection before filtering}
+print("outlier WEIGHT detection BEFORE filtering")
+neg_count <- nrow(check_for_negative_values(LC.MAT.f))
+
+numeric_data <- LC.MAT.f[, sapply(LC.MAT.f, is.numeric)]
+max_df <- as.data.frame(apply(numeric_data, 2, base::max, na.rm = TRUE))
+max =   max(max_df)
+
+
+count_LC = ncol(LC.MAT.f)-1 ## number of LC remained 
+count_TS= nrow(LC.MAT.f) ## number of TS remained 
+
+
+message(paste0("You have ", neg_count, " negative weight(s)."))
+message(paste0("The maximum weight value is ", round(max, 2), " grams. Do you think it's a possible weight or is it an outlier?? "))
+message(paste0("Number of load cells (LCs) remaining: ", count_LC))
+message(paste0("Number of timestamp (TS) recorded: ", count_TS))
+
+message("Reminder : Before filtering, dataset (LC.MAT.f) can contain negative and outlier weights.")
+```
+
+```{r plot  WEIGHT  before filtering}
+print("Plot the raw weights")
+weight_profile_output = draw_weight_raw(data=LC.MAT.f)
+```
+
+```{r create output  with weight with outliers}
+# Add metadata to LC matrix #
+meta.d.LCmat <- meta.d.sp[
+    meta.d.sp$unit %in% colnames(LC.MAT.f)[-1],
+    c("unit", "old_unit", "Treatment", "Genotype", "G..Alias", "Replicates")]
+
+LC.MAT.f.t <- as.data.frame(t(LC.MAT.f))
+
+colnames(LC.MAT.f.t) <- LC.MAT.f.t[1,]
+LC.MAT.f.t = LC.MAT.f.t[-1,]
+ncol(LC.MAT.f.t)
+
+meta.LCDF <- meta.d.LCmat[order(match(meta.d.LCmat$unit, rownames(LC.MAT.f.t))), ] 
+LC.MAT.raw <- as.data.frame(cbind(meta.LCDF, LC.MAT.f.t))
+ncol(LC.MAT.raw)
+
+save(LC.MAT.raw, file = paste(opPATH.obj, "LC.MAT.raw.RData", sep = ""))
+load(file = paste(opPATH.obj, "LC.MAT.raw.RData", sep = ""))
+
+
+
+write.table(LC.MAT.raw, paste0(opPATH, "OP-1","_weight_raw.csv"), sep = ";", row.names = F) # OP-1 : RAW WEIGHT DATA BEFORE FILTERING
+
+
+```
+
+```{r  sort outliers with curateRawLC function  }
+
+imputed.DF.final <- curateRawLC(x = LC.MAT.f, y = meta.LCDF, z= avg_wgt)
+
+### This function cleans load cell data by removing invalid and outlier weights :
+######### -negative weights (kar et al. version)
+######### - for each loadcell, draw a boxplot and removed outliers s (kar et al. version)
+######### -Too far from the expected weight value z (±30%) (addition to the original version)
+#########
+### then it interpolates for each loadcells, meaning linearly connects the known points and fills in the gaps (NAs) between them.
+## **problematic part** : For each row in the dataframe imputed.DF, it counts how many NA values are present, excluding the first 6 columns of metadata. Calculates the number of columns (excluding first 5 this time!) and finds which rows have more than 30% missing values
+
+df_imputed.DF.final = as.data.frame(t(imputed.DF.final))
+TS_df = rownames(df_imputed.DF.final)[7:nrow(df_imputed.DF.final)] # 
+Date = t(c(NA, NA,NA,NA,NA,NA,rownames(df_imputed.DF.final)[7:nrow(df_imputed.DF.final)]))
+Date = as.Date(Date)
+df_imputed.DF.final$Date= Date
+
+
+df_imputed.DF.final <- df_imputed.DF.final[!(df_imputed.DF.final$Date) %in% irrg.dts, ]
+df_imputed.DF.final <- df_imputed.DF.final[, setdiff(colnames(df_imputed.DF.final), "Date")] 
+nrow(df_imputed.DF.final) -6 ## ok ! TS without irrigation match with imputed.DF.final ! 
+
+imputed.DF.final = t(df_imputed.DF.final)
+imputed.DF.final = as.data.frame(imputed.DF.final)
+
+
+
+write.table(LC.MAT.raw, paste0(opPATH, "OP-2","_weight_imputed_cleaned1.csv"), sep = ";", row.names = F) 
+
+save(imputed.DF.final, file = paste(opPATH.obj, "imputed.DF.final.RData", sep = ""))
+load(file = paste(opPATH.obj, "imputed.DF.final.RData", sep = ""))
+
+```
+
+```{r  visualize weight outliers after filtering , warning=FALSE }
+# Outliers detection post curateRawLC
+print("outlier WEIGHT detection AFTER filtering")
+
+neg_count <- nrow(check_for_negative_values(imputed.DF.final[8:ncol(imputed.DF.final)])) ## why Na in the first TS ??? to be continued!
+
+ max_df <- as.data.frame(apply(imputed.DF.final[8:ncol(imputed.DF.final)], 2, base::max, na.rm = TRUE))
+ max_df= as.numeric( max_df[,1])
+max = max(max_df, na.rm = TRUE)
+
+count_LC = nrow(imputed.DF.final) ## number of LC remained 
+count_TS= ncol(imputed.DF.final[7:ncol(imputed.DF.final)])## number of TS remained 
+
+
+message(paste0("You have ", if (is.null(neg_count)) "NULL" else neg_count, " negative weight(s)."))
+message(paste0("The maximum weight value is ", round(max, 2), " grams. Do you think it's a possible weight or is it an outlier?? "))
+message(paste0("Number of load cells (LCs) remaining: ", count_LC))
+message(paste0("Number of timestamp (TS) recorded: ", count_TS))
+message("Reminder : After weight filtering, dataset (imputed.DF.final) should not contain negative and outlier weights.")
+
+```
+
+```{r plot weight data after filtering}
+# Now, the weight profile should be cleaned. Verify on  LC 
+weight_profile_output = draw_mid_cleaned(data=imputed.DF.final, path = path)
+```
+
+```{r filter LC write output 2}
+# Identify the highly extreme valued sectors #
+err.sec.info <- filterLCExtremeCols(x = imputed.DF.final, y = meta.LCDF)
+
+###### this function (big part of data preparation), then For each unit (column), detects outliers using boxplot, stores the number of outliers per unit in a matrix ol.cnts, Flags units with more than 50% outliers (> 50% of total rows), extracts their names (err.sec.nm), finds matching metadata in y for these flagged units (err.sec.meta).
+
+err.sec.nm <- err.sec.info$err.sec.NM
+
+err.sec.meta <- err.sec.info$err.sec.META
+
+write.table(err.sec.meta, paste0(opPATH, "OP-3","_weight_outliers_LC_removed.csv"), sep = ";", row.names = F)
+
+# Remove the err.cols i.e. sectors with extreme values
+impData.errSEC.rmvd <- imputed.DF.final[!imputed.DF.final$unit %in% err.sec.nm, ]
+save(impData.errSEC.rmvd, file = paste(opPATH.obj, "impData.errSEC.rmvd.RData", sep = ""))
+load(file = paste(opPATH.obj, "impData.errSEC.rmvd.RData", sep = ""))
+
+write.table(err.sec.meta, paste0(opPATH, "OP-4","_weight_imputed_cleaned2.csv"), sep = ";", row.names = F)
+
+```
+
+```{r plot weight data after filtering}
+# Now, the weight profile should be cleaned. Verify on  LC 
+print("Plot the weight data after filtering. cleaned weights (weight outliers must be removed)")
+weight_profile_output = draw_weight_cleaned(data=imputed.DF.final, path = path)
+```
+
+###### 3. we now have cleaned weight data. Now let's calculate evapotranspiration (ETr) !
+
+```{r Generate ETr profiles}
+print("Generate ETr profiles with cleaned weight data")
+et.vals <- getETr(x = impData.errSEC.rmvd)
+
+save(et.vals, file = paste(opPATH.obj, "et.vals.RData", sep = ""))
+load(file = paste(opPATH.obj, "et.vals.RData", sep = ""))
+
+et.obs <- et.vals$obsETr_core
+
+ETr_Meta <- et.vals$obsETr_meta
+nrow(ETr_Meta)
+
+save(ETr_Meta, file = paste(opPATH.obj, "ETr_Meta.RData", sep = ""))
+load(file = paste(opPATH.obj, "ETr_Meta.RData", sep = ""))
+
+write.table(ETr_Meta, paste0(opPATH,  "OP-5_ETr_values_before_conversion.csv"), col.names = TRUE, row.names = FALSE, sep = ";", dec = ".")
+
+```
+
+```{r plot ETr values before conversion }
+#  Draw  profile of a LC  (weight/ETr) to follow the data cleaning process (2-ETr_F).
+print("Plot  evapotranspiration values before conversion grams to mm")
+ET_profile_output = draw_ET_before_conversion(data=ETr_Meta)
+
+
+```
+
+```{r convert ETr in gram}
+# Convert ETr in grams to mm (Y/N) # 
+print(" Would you like to convert the evapotranspiration data (currently in grams) into mm? Required : YES or NO")
+print("you'll need to indicate which platform you're working on. Required : IRD or ICRISAT")  
+ETr_F <- convETr(x = ETr_Meta) 
+ 
+save(ETr_F , file = paste(opPATH.obj,  "ETr_F.RData", sep = ""))
+load(file = paste(opPATH.obj, "ETr_F.RData", sep = ""))
+
+```
+
+```{r plot ETr values after conversion and write output ETr }
+#  Draw  profile of a LC  (weight/ETr) to follow the data cleaning process (2-ETr_F).
+print("Plot raw evapotranspiration values after conversion grams/mm")
+ET_profile_output = draw_ET_raw(data=ETr_F)
+
+write.table(ETr_F, paste0(opPATH,  "OP-6_ETr_raw_after_conversion.csv"), col.names = TRUE, row.names = FALSE, sep = ";", dec = ".")
+
+```
+
+###### 4. Process Weather data to obtain ETref + filter ETr based on ETref
+
+```{r process Weather data and calculated ETref}
+print(' Stage-II: Process Weather data to obtain ETref + filter ETr based on ETref ')
+
+wthr.DFagg15min <- allData$climate
+nrow(wthr.DFagg15min)
+
+# wthr.DFagg15min$Date <- lubridate::ymd(wthr.DFagg15min$Date) #
+# wthr.DFagg15min <- wthr.DFagg15min[wthr.DFagg15min$Date>=firstDate & 
+#                                      wthr.DFagg15min$Date<=lastDate,]
+# 
+# 
+# # wthr.DFagg15min <- wthr.DFagg15min[,-1]
+# 
+# # Create empty base matrix for weather variables
+# end.seq_hhmm  <- '23:45'
+# 
+# if (seq_by == '15'){
+#   end.seq_hhmm  <- '23:45'
+# } else if(seq_by == '30'){
+#   end.seq_hhmm  <- '23:30'
+# } else if(seq_by == '45'){
+#   end.seq_hhmm  <- '23:15'
+# } else if(seq_by == '60'){
+#   end.seq_hhmm  <- '23:00'}
+# 
+# TS_base<-as.data.frame(as.character(seq(ymd_hm(paste0(firstDate," ",'00:00')),
+#                                         ymd_hm(paste0(lastDate," ",end.seq_hhmm)),
+#                                         by = paste0(seq_by, " ", "mins"))))
+# names(TS_base)[1]<-c("int.val")
+# # 
+# time = as.data.frame(c(str_split( TS_base$int.val, " ")))
+# 
+# time = time[-1,]
+# time = t(time)
+# 
+# ## pb at 00:00:00, no hour created !
+# 
+# 
+# TS_base[,2] = time
+# colnames(TS_base) =c("int.val", "time")
+# TS_base = TS_base[,1:2]
+# 
+# for (i in 1:nrow(TS_base)) {
+#   if ((TS_base$time[i] =="00:15:00" )==TRUE){
+#     TS_base$time[i-1] = "00:00:00"  } }
+# 
+# # Since, the hms values slightly differ in the orginal dataset than the ideal 15min interval values,
+# # replace them with the TS_base strftime (hms) values
+# 
+# hms.ts.base<-unique(TS_base$time)
+# names(hms.ts.base)<-c("time")
+# # 
+# print("Climate matrix timestamp mapping status")
+# # 
+# # i<-nrow(wthr.DFagg15min)
+# # pbar <- create_progress_bar('text')
+# # pbar$init(i)
+# # # 
+# # for(i in 1:nrow(wthr.DFagg15min))
+# # {
+# #   if(! wthr.DFagg15min$TS[i] %in% hms.ts.base)
+# #   {
+# #     j <- which.min(abs(chron(times=hms.ts.base) -
+# #                          chron(times=format(wthr.DFagg15min$TS[i],format = "%H:%M:%S")))) # find which value in ts-base-vector is nearest to each-DP
+# # 
+# #     # assign the nearest ts-base-vector value to that DP
+# #     dd <- date(wthr.DFagg15min$TS[i])
+# #     wthr.DFagg15min$TS[i] <- ymd_hms(paste0(dd, TS_base$time[j]))}
+# #   pbar$step()
+# # }
+# # 
+# TS_ALL<-as.data.frame(as.character(seq(ymd_hm(paste0(firstDate," ",'00:00')),
+#                                        ymd_hm(paste0(lastDate," ",end.seq_hhmm)),
+#                                        by = paste0(seq_by, " mins"))))
+#  names(TS_ALL)[1]<-c("TS.n") # MUST be the same as in original data set m.lc.df
+# 
+# 
+# ## pb at 00:00:00, no hour created !
+# for (i in 1:nrow(TS_ALL)) {
+#   if ((str_ends(TS_ALL$TS.n[i], "00:15:00"))==TRUE){
+#     TS_ALL$TS.n[i-1] = "00:00:00"  } }
+
+############## to be adapted for IRD and ICRISAT############## 
+
+# wthr.DFagg15min =  wthr.DFagg15min[!as.Date(wthr.DFagg15min$Date) %in% irrg.dts, ]
+
+TS_weather = as.POSIXct(wthr.DFagg15min$TS)
+head(TS_weather)
+
+
+
+save(TS_weather, file =  paste(opPATH.obj,  "TS_weather.RData", sep = ""))
+load(file = paste(opPATH.obj,  "TS_weather.RData", sep = "")) ## TS without irrigation, only for 
+
+
+
+
+# # create empty dataframe to store all values
+Wthr.MAT <- as.data.frame(matrix(nrow = length(TS_weather), 
+                                  ncol = 2 ))
+ 
+Wthr.MAT[ ,1] <- date(TS_weather); names(Wthr.MAT)[1] <- "Date"
+
+Wthr.MAT[ ,2] <- (TS_weather); names(Wthr.MAT)[2] <- "TS"
+
+
+
+
+
+
+# 
+# colnames(Wthr.MAT)[3:ncol(Wthr.MAT)] <- names(wthr.DFagg15min)[3:ncol(wthr.DFagg15min)] 
+
+Wthr.MAT <- Wthr.MAT[, !duplicated(names(Wthr.MAT))]
+wthr.DFagg15min <- wthr.DFagg15min[, !duplicated(names(wthr.DFagg15min))]
+# 
+# wthr.DFagg15min$TS = as.POSIXct(wthr.DFagg15min$TS)
+nrow( wthr.DFagg15min )
+nrow( Wthr.MAT )
+
+
+
+wthr.DFagg15min <- wthr.DFagg15min[!apply(wthr.DFagg15min, 1, function(row) all(is.na(row))), ]
+Wthr.MAT <- Wthr.MAT[!apply(Wthr.MAT, 1, function(row) all(is.na(row))), ]
+
+
+df <- merge(x = Wthr.MAT, y = wthr.DFagg15min, by = "TS", all.x = TRUE)
+
+
+
+
+nrow(df) == length(TS_weather)
+
+colnames(df)
+df <- df [c("TS" ,  "Temp",   "RH"  ,   "VPD"   , "SR"    , "WS")] 
+
+# 
+df <- df[!duplicated(df[c("TS")]),]
+# colnames(df.new)[2] <- names(wthr.DFagg15min)[1]
+
+# 
+etrDTS <- as.data.frame(colnames(ETr_F)[7:ncol(ETr_F)])
+names(etrDTS) <- "TS"
+etrDTS$TS <- ymd_hms(etrDTS$TS)
+
+
+# df.new$Temp <- if(sum(is.na(df.new$Temp))>0){df.new$Temp<-na.aggregate.default(df.new$Temp)}
+# df.new$RH <- if(sum(is.na(df.new$RH))>0){df.new$RH<-na.aggregate.default(df.new$RH)}
+# df.new$SR <- if(sum(is.na(df.new$SR))>0){df.new$SR<-na.aggregate.default(df.new$SR)}
+# df.new$WS <- if(sum(is.na(df.new$WS))>0){df.new$WS<-na.aggregate.default(df.new$WS)}
+wthr.DFagg15min.filt <- df
+
+# Compute VPD and insert into the weather DF #
+SVP <- 610.7*(10^(7.5*wthr.DFagg15min.filt$Temp/(237.3+wthr.DFagg15min.filt$Temp)))
+VPD <- ((1 - (wthr.DFagg15min.filt$RH/100))*SVP)/1000
+wthr.DFagg15min.filt$VPD <- VPD
+
+et.obs <- ETr_F
+save(et.obs, file = paste(opPATH.obj,  "et.obs.RData", sep = ""))
+
+col <- colnames(et.obs)[7:ncol(et.obs)]
+utc_times <- as.POSIXct(col, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+new_names <- format(utc_times, format = "%Y-%m-%d %H:%M:%S UTC", tz = "UTC")
+colnames(et.obs)[7:ncol(et.obs)] <- new_names
+
+
+# Calculate Penman Monteith ET #
+wthr.df1 <- calculateETref(x=wthr.DFagg15min.filt)
+max(wthr.df1$ETref) ## possible or outlier?
+wthr.ETref.df <- as.data.frame(wthr.df1)
+
+# select columns "Temp"  "RH"    "VPD"   "SR"    "WS"    "Tmax"  "Tmin"  "ETref"
+empty.MAT.wthr.ETref  = as.data.frame(t(wthr.ETref.df[,c( "Temp",  "RH",    "VPD",   "SR",    "WS", "Tmax",  "Tmin",  "ETref")]))
+colnames(empty.MAT.wthr.ETref) = wthr.ETref.df$TS
+n <- 6  # add empty col
+empty_cols <- as.data.frame(matrix(NA, nrow = nrow(empty.MAT.wthr.ETref), ncol = n))
+empty.MAT.wthr.ETref <- cbind(empty_cols, empty.MAT.wthr.ETref)
+colnames(empty.MAT.wthr.ETref)[1:6] <- colnames(et.obs)[1:6]
+
+metad_col <- et.obs[1:6]
+weather_ETr <- colnames(et.obs)[7:ncol(et.obs)]
+weather_ETr <- trimws(weather_ETr)
+TS_weather <- trimws(TS_weather)
+# Supprimer " UTC" de weather_ETr
+weather_ETr <- gsub(" UTC$", "", weather_ETr)
+colnames(et.obs) <- gsub(" UTC$", "", colnames(et.obs) ) ## parfois UTC presnent/ parfois non
+
+
+# Function to add "00:00:00" time to any date string that only has date (length == 10)
+uniform_format <- function(dates) {
+  # If string length is exactly 10, append " 00:00:00" (start of day)
+  dates_fixed <- ifelse(nchar(dates) == 10, paste0(dates, " 00:00:00"), dates)
+  return(dates_fixed)
+}
+
+weather_ETr <- uniform_format(weather_ETr)
+TS_weather = uniform_format(TS_weather)
+matched_weather_cols <- intersect(weather_ETr, TS_weather)
+length(matched_weather_cols)
+
+
+nrow(metad_col)
+
+et.obs.filtered <- et.obs[, c(matched_weather_cols)]
+et.obs.filtered <- cbind(et.obs [1:6], et.obs.filtered)
+
+et.obs = et.obs.filtered
+ncol(et.obs)
+ncol(empty.MAT.wthr.ETref)
+
+colnames(empty.MAT.wthr.ETref) <- uniform_format(colnames(empty.MAT.wthr.ETref) )
+colnames(et.obs)<- uniform_format(colnames(et.obs))
+
+# et.obs <- et.obs[, colnames(empty.MAT.wthr.ETref)]
+
+head(colnames(empty.MAT.wthr.ETref))
+head(colnames(et.obs))
+
+ncol(et.obs)
+ncol(empty.MAT.wthr.ETref)
+# Keep only common columns
+common_cols <- intersect(names(et.obs), names(empty.MAT.wthr.ETref))
+
+# Subset both data frames to those columns
+df1_common <- empty.MAT.wthr.ETref[, common_cols, drop = FALSE]
+df2_common <- et.obs[, common_cols, drop = FALSE]
+
+# Bind the rows
+wthr.ETref.ETobs <- rbind(df1_common, df2_common)
+
+
+```
+
+```{r intermediate save wther.ETref.ETobs}
+## save some parts of wthr.ETref.ETobs dataframe to reuse in the follwing steps
+# (the format of wthr.ETref.ETobs will be use for the features extraction, hence you have to come back to this format each time)
+
+metad_emptyrows= wthr.ETref.ETobs[,1:6]
+save(metad_emptyrows, file =  paste(opPATH.obj,"metad_emptyrows.RData", sep = ""))
+load(file =  paste(opPATH.obj,"metad_emptyrows.RData", sep = ""))
+
+weather= wthr.ETref.ETobs[1:8,]
+save(weather, file =  paste(opPATH.obj,"weather.RData", sep = ""))
+load(file =  paste(opPATH.obj,"weather.RData", sep = ""))
+
+
+save(wthr.ETref.ETobs, file =  paste(opPATH.obj,"wthr.ETref.ETobs.RData", sep = ""))
+load(file =  paste(opPATH.obj,"wthr.ETref.ETobs.RData", sep = ""))
+
+
+
+```
+
+```{r filter ETr based on ETref }
+## Filter ETobs based on ETREF values on solar radiation values (SR)  instead of hours (in the initial version) 
+### if SR = 0 -->  night period --> ET = 0
+### if SR > 0 -->  day period --> -0.01<ET<ETref
+ET_ratio_mat <- generateETrRatio(x = wthr.ETref.ETobs) 
+save(ET_ratio_mat, file =  paste(opPATH.obj,"ET_ratio_mat.RData", sep = ""))
+load(file =  paste(opPATH.obj,"ET_ratio_mat.RData", sep = ""))
+```
+
+```{r plot before smooth }
+
+
+data=(ET_ratio_mat)
+data = data[,-c(1:7)] 
+data$TS = rownames(data)
+data$TS = as.POSIXct(data$TS)
+i=2
+   plot<-
+    ggplot(data =data, aes(x=data$TS))+
+    ylab("ETr and ETref (mm.15min-1) ")+
+    xlab("Timestamp")+
+    labs(title = paste("ETr filtered before smooth (non normalized) ",colnames(data)[i]))+
+    geom_point(aes(y = as.numeric(data[,1])), color = "darkolivegreen")+
+    geom_point(aes(y = as.numeric( data[,i])), color = "darkblue")+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+
+```
+
+  
+
+```{r ETr smooth }
+ETr_smth_metad = ET_ratio_mat
+ETr_smth_metad = ETr_smth_metad[,-c(1:8)]
+
+
+ETr_smth_metad = smoothETr(x = ETr_smth_metad)  
+x[x < 0] <- NA
+
+
+
+ETr_smth_metad= cbind(metad_col, ETr_smoothFILE)
+colnames(ETr_smth_metad) <- colnames(weather)
+ETr_smth_metad = rbind(weather, ETr_smth_metad)
+
+
+save(ETr_smth_metad, file =  paste(opPATH.obj,"ETr_smth_metad.RData", sep = ""))
+
+
+
+save(ETr_smth_metad, file =  paste(opPATH.obj,"ETr_smth_metad.RData", sep = ""))
+load(file =  paste(opPATH.obj,"ETr_smth_metad.RData", sep = ""))
+
+write.table(ETr_smth_metad, paste0(opPATH, "OP-7_ETr_imputed_cleaned1.csv"), sep = ";", row.names = F, dec = ".")
+
+
+
+```
+
+
+```{r plot after smooth }
+
+
+data=as.data.frame(t(ETr_smth_metad)) 
+ETref = as.numeric(data$ETref[7:nrow(data)]) 
+data = data[,-c(1:8)] 
+colnames(data) = data[1,] 
+data = data[-c(1:6),] 
+data = cbind(ETref, data)
+data$TS = rownames(data)
+data$TS = as.POSIXct(data$TS)
+i=2
+   plot<-
+    ggplot(data =data, aes(x=data$TS))+
+    ylab("ETr and ETref (mm.15min-1) ")+
+    xlab("Timestamp")+
+    labs(title = paste("ETr filtered and smooth (non normalized) ",colnames(data)[i]))+
+    geom_point(aes(y = as.numeric(data[,1])), color = "darkolivegreen")+
+    geom_point(aes(y = as.numeric( data[,i])), color = "darkblue")+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+
+```
+
+  
+
+```{r Outliers detection ETr }
+# Outliers detection
+# nrow(check_for_negative_values(ETr_smth_metad[(9:nrow(ETr_smth_metad)),(7:ncol(ETr_smth_metad))]), n )
+load(file =  paste(opPATH.obj,"ETr_smth_metad.RData", sep = ""))
+
+ETr_smth_metad_data = ETr_smth_metad[9:nrow(ETr_smth_metad),7:ncol(ETr_smth_metad)]
+numeric_data <- ETr_smth_metad_data[, sapply(ETr_smth_metad_data, is.numeric)]
+neg_count <- nrow(check_for_negative_values(ETr_smth_metad_data))
+
+numeric_data <- numeric_data[, colSums(!is.na(numeric_data)) > 0]
+max_df <- as.data.frame(apply(numeric_data, 2, base::max, na.rm = TRUE))
+max =   max(max_df)
+
+
+count_TS = ncol(ETr_smth_metad_data)## number of LC remained 
+count_LC= nrow(ETr_smth_metad_data) ## number of TS remained 
+
+
+message(paste0("You have ", neg_count, " negative evapotranspiration value(s)."))
+message(paste0("The maximum evapotranspiration value is ", round(max, 2), " mm orgram/time interval-1 Do you think it's a possible ETr value or is it an outlier?? "))
+message(paste0("Number of load cells (LCs) remaining: ", count_LC))
+message(paste0("Number of timestamp (TS) recorded: ", count_TS))
+```
+```{r identify and remove error plots - ETr values }
+ LC = ETr_smth_metad[9:nrow(ETr_smth_metad), 1]
+
+# # Identify error plots from ETr values using the similar method as above #
+ETr_err.sec.info <- filterETrExtremeCols(x = ETr_smth_metad, y = meta.LCDF) ## FILTRER APRES LA PARTIE ET ETREF !!!
+## this function  count outliers per unit using boxplot stats. For each unit (column), counts how many values are outliers (ignoring NaNs). Flags units where more than 50% of values are outliers.
+err.sec.nm <- ETr_err.sec.info$ETr_err.sec.NM
+
+err.sec.meta <- ETr_err.sec.info$ETr_err.sec.META
+
+if(length(err.sec.nm)>0){write.table(err.sec.meta,
+                                     paste0(opPATH, "OP-8_ETr_outliers_LC_removed.csv"), sep = ";", row.names = F, dec = ".")}
+
+# Remove the err.cols i.e. sectors with extreme values #
+ETr_Meta_ERRsec.rmvd <- ETr_smth_metad
+
+ETr_Meta_ERRsec.rmvd <- ETr_Meta_ERRsec.rmvd[!ETr_Meta_ERRsec.rmvd$unit %in% err.sec.nm, ]
+
+write.table(ETr_Meta_ERRsec.rmvd, paste0(opPATH,
+                                         "OP-9_ETr_filtered_interpolated.csv"), sep = ";", row.names = F, dec = ".")
+save(ETr_Meta_ERRsec.rmvd, file =  paste(opPATH.obj,"ETr_Meta_ERRsec.rmvd.RData", sep = ""))
+load(paste(opPATH.obj,"ETr_Meta_ERRsec.rmvd.RData", sep = ""))
+
+
+
+```
+
+
+
+
+```{r plot ETr filtered a data (non normalized)}
+
+ETref= t(ETr_Meta_ERRsec.rmvd[8,7:ncol(ETr_Meta_ERRsec.rmvd)])
+LC = ETr_Meta_ERRsec.rmvd[9:nrow(ETr_Meta_ERRsec.rmvd),1]
+length(LC)
+TS <- as.character(ETr_Meta_ERRsec.rmvd[[1]])
+length(TS)
+
+data=as.data.frame(t(ETr_Meta_ERRsec.rmvd))
+data = data[,9:ncol(data)]
+colnames(data) = data[1,] 
+data = data[-c(1:6),] 
+data = cbind(ETref, data)
+
+data[] <- lapply(data, function(x) as.numeric(as.character(x)))
+
+data$TS= rownames(data) 
+data$TS =as.POSIXct(data$TS, tz="UTC")
+  
+  
+  full_path <- file.path(path, opPATH.profile)
+  if (!dir.exists(full_path)) dir.create(full_path, recursive = TRUE)
+  output_dir_ET_ETREF <- file.path(full_path, "ETr_filtered_smooth_ETREF")
+  dir.create(output_dir_ET_ETREF, recursive = TRUE, showWarnings = FALSE)  # create folder if missing 
+  
+
+
+ for ( i in 2: ncol(data)-1) {
+   data[,i] = as.numeric( data[,i])
+    file_name <- paste0(colnames(data)[i], "_ETr_filtered_smooth_ETref.png", sep = "")
+    safe_name <- gsub("[:]", "_", file_name) #by replacing ':' with '_'
+
+   
+    file_path <- file.path(output_dir_ET_ETREF, safe_name)
+   
+  png(file = file_path)
+  plot<-
+    ggplot(data =data, aes(x=data$TS))+
+    ylab("ETr and ETref (mm.15min-1) ")+
+    xlab("Timestamp")+
+    labs(title = paste("ETr filtered and smooth (non normalized) ",colnames(data)[i]))+
+    geom_point(aes(y = as.numeric(data[,1])), color = "darkolivegreen")+
+    geom_point(aes(y = as.numeric( data[,i])), color = "darkblue")+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+   print(i)
+ }
+
+## huge ETref compared to ETr
+# let's see precisely on the ETr profile
+
+
+  
+  ## Let's see ETr profile without ETref
+  output_dir_ET_filt <- file.path(full_path, "ETr_filtered_smooth")
+  dir.create(output_dir_ET_filt, recursive = TRUE, showWarnings = FALSE)  # create folder if missing 
+  
+
+
+ for ( i in 2: ncol(data)-1) {
+   data[,i] = as.numeric( data[,i])
+   
+       file_name <- paste0(colnames(data)[i], "_ETr_filtered_smooth.png", sep = "")
+       safe_name <- gsub("[:]", "_", file_name) #by replacing ':' with '_'
+
+    file_path <- file.path(output_dir_ET_filt, safe_name)
+   
+  png(file = file_path)
+   
+  plot<-
+    ggplot(data =data, aes(x=data))+
+    ylab("ETr (mm.15min-1) ")+
+    xlab("Timestamp")+
+    labs(title = paste("ETr filtered smooth (non normalized) ",colnames(data)[i]))+
+    geom_point(aes(y = as.numeric( data[,i])), color = "darkblue")+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+   print(i)
+ }
+
+  
+```
+
+<!-- ```{r ETr interpolation WORK in PROGRESS } -->
+
+<!-- ETr_smoothFILE = ETr_Meta_ERRsec.rmvd -->
+
+<!-- save(ETr_smoothFILE, file = paste(opPATH.obj,"ETr_smoothFILE.RData", sep = "")) -->
+
+<!-- sel.secs <- unique(na.omit(ETr_smoothFILE$old_unit))  -->
+
+<!-- length(sel.secs)  -->
+
+<!-- save(sel.secs, file = "./saved_objects/sel.secs.RData") -->
+
+<!-- length(TS) -->
+
+<!-- TS= as.character(TS) -->
+
+<!-- unq.dts <- unique(substr(colnames(wthr.ETref.ETobs)[-c(1:6)], 1, 10)) -->
+
+<!-- length(unq.dts) -->
+
+<!-- load(file = "./saved_objects/ETr_smoothFILE.RData") -->
+
+<!--   ## add 2 columns Experiment and Species to metad file -->
+
+<!--   metad_emptyrows$Experiment[9:nrow(metad_emptyrows)] = "EXp60" -->
+
+<!--   metad_emptyrows$Species[9:nrow(metad_emptyrows)] ="Sorghum" -->
+
+<!--   # arrange the columns in a certain order -->
+
+<!--   metad_emptyrows <- metad_emptyrows %>% select(unit, old_unit, Experiment, Treatment, Species, Genotype, G..Alias, Replicates)   -->
+
+<!--   x= cbind(metad_emptyrows, ETr_smoothFILE[7:ncol(ETr_smoothFILE)]) -->
+
+<!--   ETr_filt_imputed_FILE= x -->
+
+<!-- ### start of calculateTr package ... -->
+
+<!-- ETr_smth.mat <- ETr_filt_imputed_FILE[9:nrow(ETr_filt_imputed_FILE),  -->
+
+<!--                                       9:ncol(ETr_filt_imputed_FILE)] -->
+
+<!-- rownames(ETr_smth.mat)=   ETr_filt_imputed_FILE[9:nrow(ETr_filt_imputed_FILE),1] -->
+
+<!-- ETr_smth.mat= cbind(rownames(ETr_smth.mat), ETr_smth.mat) -->
+
+<!-- ETr_smth.mat<-ETr_smth.mat %>% arrange(`rownames(ETr_smth.mat)`) ##trie par ordre croissant de nom de LC -->
+
+<!-- rownames(ETr_smth.mat)= ETr_smth.mat[,1] -->
+
+<!-- ETr_smth.mat= ETr_smth.mat[,-1] -->
+
+<!-- colnames(ETr_smth.mat)=TS -->
+
+<!-- max_df=as.data.frame(colMax(ETr_smth.mat))  -->
+
+<!-- max(max_df[1:nrow(max_df),]) ##   -->
+
+<!-- min_df=as.data.frame(colMin(ETr_smth.mat)) -->
+
+<!-- min(min_df[1:nrow(min_df),]) ## -->
+
+<!-- ## removed negative values -->
+
+<!-- for (i in 1:nrow(ETr_smth.mat)){ -->
+
+<!--   for (j in 1:ncol(ETr_smth.mat)){ -->
+
+<!--     ETr_smth.mat[i,j][ETr_smth.mat[i,j]<0]<- NA } } -->
+
+<!-- save(ETr_smth.mat, file = paste(opPATH.obj,"ETr_smth.mat_rmd_out.RData", sep = "")) -->
+
+<!-- load(file = paste(opPATH.obj,"ETr_smth.mat_rmd_out.RData", sep = "")) -->
+
+<!-- write.table(ETr_smth.mat, file = paste(opPATH,"ETr_smth.mat_rmd_out.csv", sep = ""), sep = ";", dec = ".") -->
+
+<!-- ETref= t(x[8,9:ncol(x)]) -->
+
+<!-- data=as.data.frame(t(ETr_smth.mat)) -->
+
+<!-- data = cbind(ETref, data) -->
+
+<!-- colnames(data)= c("ETref",rownames(ETr_smth.mat)) -->
+
+<!-- data$TS= TS -->
+
+<!-- data$TS =ymd_hms(data$TS) -->
+
+<!--  for ( i in 2: ncol(data)) { -->
+
+<!--   png(file = paste(opPATH.profile,i-1, "_ETr_non_normalized_ETref.png", sep = "")) -->
+
+<!--   plot<- -->
+
+<!--     ggplot(data =data, aes(x=TS))+ -->
+
+<!--     ylab("ETr and ETref (mm.15min-1) ")+ -->
+
+<!--     xlab("Timestamp")+ -->
+
+<!--     labs(title = paste("ETr filtered (non normalized) ",colnames(data)[i]))+ -->
+
+<!--     geom_line(aes(y = data[,1]), color = "darkolivegreen")+ -->
+
+<!--     geom_point(aes(y = data[,i]), color = "darkblue")+ -->
+
+<!--     ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+ -->
+
+<!--     theme(axis.text.x=element_text(angle = -45, hjust = 0)) -->
+
+<!--   print(plot) -->
+
+<!--   dev.off() -->
+
+<!--    print(i) -->
+
+<!-- } -->
+
+<!-- ``` -->
+
+```{r}
+## We observed high peak that does not seem logical. It is not always the same day (not related to weather condition).  not present for all genotypes
+## Objective : removed these peaks based on max per day 
+data <- as.data.frame(t(ETr_Meta_ERRsec.rmvd))
+
+# Remove weather and metadata columns
+data <- data[, -c(1:8)]
+
+# Set column names and remove header rows
+colnames(data) <- data[1, ]
+data <- data[-c(1:6), ]
+
+# Add timestamp and date columns
+data$TS <- rownames(data)
+data$date <- as.Date(data$TS)
+data$date <- as.factor(data$date)
+
+# Create unique_date dataframe with index and date
+unique_date <- data.frame(
+  n_day = 1:nlevels(data$date),
+  day = as.Date(levels(data$date))
+)
+
+# Prepare empty max_day dataframe
+max_day <- data.frame(
+  date = as.Date(rep(NA, length(unique(data$date)))),
+  max = rep(NA, length(unique(data$date)))
+)
+
+# Initialize data removal tracker (assuming LC is a vector of variable names)
+LC <- colnames(data)[1:(ncol(data) - 2)]
+dat_rmd <- data.frame(matrix(NA, nrow = length(LC), ncol = 1))
+rownames(dat_rmd) <- LC
+
+# Loop over each LC column
+for (n in 1:length(LC)) {
+  print(paste("LC analysis:", LC[n]))
+  
+  # Create a subset with TS, date, and one LC
+  subset_LC <- data.frame(
+    TS = data$TS,
+    date = as.Date(data$date),
+    LC = as.numeric(data[[LC[n]]])
+  )
+  
+  # Fill max_day with daily max values
+  for (i in 1:nrow(unique_date)) {
+    subset_day <- subset_LC[subset_LC$date == unique_date$day[i], ]
+    max_day[i, "date"] <- unique_date$day[i]
+    if (nrow(subset_day) > 0) {
+      max_day[i, "max"] <- max(subset_day$LC, na.rm = TRUE)
+    }
+  }
+
+  # Detect outliers
+  valid_max <- max_day$max[!is.na(max_day$max)]
+  if (length(valid_max) > 0) {
+    ol <- boxplot(valid_max, plot = FALSE)$out
+    tf <- which(max_day$max %in% ol)
+    date_to_rmd <- max_day$date[tf]
+  } else {
+    date_to_rmd <- c()
+  }
+  
+  # Remove outlier days from the main data
+  if (length(date_to_rmd) == 0) {
+    print("All days have been kept.")
+    dat_rmd[n, 1] <- 0
+  } else {
+    rows_to_rmd <- which(as.Date(data$date) %in% date_to_rmd)
+    data[rows_to_rmd, LC[n]] <- NA
+    print(paste(length(date_to_rmd), "day(s) removed."))
+    dat_rmd[n, 1] <- length(date_to_rmd)
+  }
+}
+
+
+
+
+
+
+
+
+ETR_rmd_max= as.data.frame(t(data))
+ETR_rmd_max= ETR_rmd_max[-nrow(ETR_rmd_max),] # removed TS nd date
+ETR_rmd_max= ETR_rmd_max[-nrow(ETR_rmd_max),] # removed TS nd date
+
+ETR_rmd_max=  as.data.frame(apply(ETR_rmd_max, 2, as.numeric))
+rownames(ETR_rmd_max)= LC
+
+
+
+
+
+## removed negative values
+for (i in 1:nrow(ETR_rmd_max)){
+  for (j in 1:ncol(ETR_rmd_max)){
+    ETR_rmd_max[i,j][ETR_rmd_max[i,j]<0]<- NA } }
+
+
+
+
+save(ETR_rmd_max, file = paste(opPATH.obj,"ETR_rmd_max.RData", sep = ""))
+load(file = paste(opPATH.obj,"ETR_rmd_max.RData", sep = ""))
+
+
+write.table(ETr_Meta_ERRsec.rmvd, paste0(opPATH,
+                                         "OP-10_ETr_filtered_rmd_max.csv"), sep = ";", row.names = F, dec = ".")
+
+```
+
+```{r}
+full_path <- file.path(path, opPATH.profile)
+  if (!dir.exists(full_path)) dir.create(full_path, recursive = TRUE)
+  ETR_rmd_out <- file.path(full_path, "ETr_peak_day_rmd_out")
+  dir.create(ETR_rmd_out, recursive = TRUE, showWarnings = FALSE)  # create folder if missing 
+  
+  
+data=as.data.frame(t(ETR_rmd_max))
+data$TS= TS
+data$TS=ymd_hms(data$TS)
+i=1
+
+
+for ( i in 1: ncol(data)) {
+  
+file_name <- paste0(colnames(data)[i], "_ETr_peak_day_rmd_out.png", sep = "")
+    safe_name <- gsub("[:]", "_", file_name) #by replacing ':' with '_'
+
+   
+    file_path <- file.path(ETR_rmd_out, safe_name)
+   
+  png(file = file_path)
+plot <- ggplot(data = data, aes(x = as.POSIXct(TS))) +
+  geom_point(aes(y = as.numeric(data[, i])), color = "chocolate4") +
+  labs(
+    title = paste("ETr- removed outliers days:", colnames(data)[i]),
+    x = "Timestamp",
+    y = "ETr rmd out (mm.15min⁻¹)"
+  ) +
+  scale_x_datetime(labels = scales::date_format("%d-%m"), breaks = "1 day") +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0))
+
+print(plot)
+
+# Close the device
+dev.off()
+
+ }
+```
+
+```{r}
+
+# row = TS, col = LC 
+data = as.data.frame(t(ETr_Meta_ERRsec.rmvd))
+colnames(data)[9:ncol(data)]= data[1,9:ncol(data)]
+target_cols <- 9:ncol(data)# exclude weather col 1:8
+#  Check if col has only NA values
+only_na_cols <- apply(data[, target_cols], 2, function(col) all(is.na(col)))
+# Prepare empty  dataframe
+ETR_rmd_max_interp <- data
+ETR_rmd_max_interp[,9:ncol(ETR_rmd_max_interp)] <- NA
+
+# Interpolation
+### interpolation of NA values need a temperal serie, (ie pick by LC for a entire serie)
+for (j in target_cols) {
+    non_na_vals <-sum(!is.na(data[7:nrow(data), j]))
+    if (non_na_vals >= 2) {
+        ETR_rmd_max_interp[[j]] <- na.approx(data[[j]], na.rm = FALSE)
+    } else {
+        message("Skipping column ", j, " (", non_na_vals, " non-NA values)")
+    }
+}
+
+ETR_rmd_max_interp [1:6,]= data [1:6,]
+ETR_rmd_max_interp [7,]=NA 
+
+ETR_rmd_max_interpolated = t(ETR_rmd_max_interp)
+save(ETR_rmd_max_interpolated, file = paste(opPATH.obj,"ETR_rmd_max_interpolated.RData", sep = ""))
+load(file =  paste(opPATH.obj,"ETR_rmd_max_interpolated.RData", sep = ""))
+
+
+write.table(ETR_rmd_max_interpolated, paste0(opPATH,
+                                         "OP-11_ETr_filtered_smooth_rmd_max.csv"), sep = ";", row.names = F, dec = ".")
+```
+
+```{r plotETR_rmd_max_interpolated}
+
+
+data=t(ETR_rmd_max_interpolated)
+  data=data[,-c(1:8)]
+  data=data[-c(1:6),]
+  data_num <- as.data.frame(apply(data, 2, as.numeric))
+  data=data_num
+  data= cbind(TS, data)
+  data$TS =ymd_hms(data$TS )
+  colnames(data)[2:ncol(data)]=LC
+  
+  opPATH.profile <- "./results/profile/"
+  full_path <- file.path(path, opPATH.profile)
+  if (!dir.exists(full_path)) dir.create(full_path, recursive = TRUE)
+  output_dir <- file.path(full_path, "ETr_filtered_interpolated_rmd_out")
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)  # create folder if missing 
+  
+  
+    for (i in 2:(ncol(data))){
+      png(file = paste(output_dir,"/ETr_filtered_interpolated_rmd_out_", gsub("[:]", "_", as.character(colnames(data)[i])), ".png", sep = "")) 
+      
+  plot<-
+    ggplot(data =data, aes(TS, data[,i]))+
+    ylab("ETr mm. time interval min-1")+
+    xlab("Timestamp")+
+    labs(title = paste("ETr profile filtered",colnames(data)[i]))+
+    geom_point()+
+    geom_line()+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), date_breaks = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+}
+```
+
+```{r come back to good format}
+
+load(file =  paste(opPATH.obj,"metad_emptyrows.RData", sep = ""))
+
+ncol(ETR_rmd_max)
+ncol(metad_emptyrows)
+nrow(ETR_rmd_max)
+nrow(metad_emptyrows)
+
+ETR_rmd_max$unit = rownames(ETR_rmd_max)
+ETR_cleaned= merge(metad_emptyrows, ETR_rmd_max, by="unit" )
+
+
+
+load(file =  paste(opPATH.obj,"weather.RData", sep = ""))
+
+
+ncol(ETR_cleaned)
+ncol(weather)
+nrow(ETR_cleaned)
+nrow(weather)
+
+# Get only weather col if present in ETR_cleaned intersecting column names
+common_cols <- intersect(colnames(weather), colnames(ETR_cleaned))
+weather_common <- weather[, common_cols]
+ETR_cleaned_common <- ETR_cleaned[, common_cols]
+
+data_combined <- rbind(weather_common, ETR_cleaned_common)
+save(data_combined, file = paste(opPATH.obj,"data_combined.RData", sep = ""))
+load(file =  paste(opPATH.obj,"data_combined.RData", sep = ""))
+
+```
+
+###### END of filtering process
+
+###### 5. Process planimeter data in case of no PlantEye data
+
+```{r integrate planimeter data if no PlantEye data  }
+print("Load planimeter file")
+LA_HARVEST <- read.csv(planimeter_file_path, sep = ";")
+print("The result here should be : unit (chr), old_unit(chr), Experiment (chr), Treatment (chr),Species (chr),Genotype (chr  or int),G..Alias(chr or int), Replicates (int), and leaf area data (1 or several column)")
+LA_HARVEST = arrange(LA_HARVEST, LA_HARVEST$unit)
+print("if you have planimeter data, but no PlantEye data, you can plot a linear regression, from 0 (emergence) to the harvest date (planimeter), to estimate the leaf area (planimp for each date, and normalize transpiration by this result.")
+linear_LA_question <- readline(prompt = "Do you want to apply this method? Required YES or NO:  ") 
+
+  
+if ((linear_LA_question =="YES")==TRUE) {
+  emergence_date <- readline(prompt = "What date is emergence estimated (or day where leaf area is 0)? Required number of days after sowing DAS: ") 
+  harvest_date <- readline(prompt = "When did you harvest and measure the leaf area? Required number of days after sowing DAS: ") 
+  
+  harvest_date = as.numeric (harvest_date)
+  emergence_date = as.numeric (emergence_date)
+  
+  
+
+
+for (i in 1:nrow(LA_HARVEST)){
+  
+  LA_rep = as.data.frame(LA_HARVEST[i,])
+  df <- data.frame(x= c(emergence_date,harvest_date), y= c(0,LA_rep$LA))
+  fit <- lm(y ~ x, data = df)
+  Slope <- as.numeric(coef(fit)[2])
+
+  results = as.data.frame(t(c(LA_rep[1,1:ncol(LA_rep)],Slope)))
+  
+  results[,1:8] <- sapply(results[,1:8], function(x) paste(x, collapse = ","))
+  results[,9:10]<- as.numeric(unlist(results[,9:10]))
+
+  
+  write.table (results, file = paste(opPATH, "LA_LINEAR_GROWTH.csv", sep = ""), append = TRUE, col.names = F, row.names = F, sep = ";")
+  # print(i)
+}
+
+LA_LINEAR_GROWTH = read.csv(paste(opPATH, "LA_LINEAR_GROWTH.csv", sep = ""), 
+                            sep = ";", header = FALSE)  # Ajoute header = TRUE si nécessaire
+colnames(LA_LINEAR_GROWTH) = colnames(results)
+colnames(LA_LINEAR_GROWTH)[colnames(LA_LINEAR_GROWTH) ==  "V10"] <- "Slope"
+LA_LINEAR_GROWTH = distinct(LA_LINEAR_GROWTH)
+LA_LINEAR_GROWTH= LA_LINEAR_GROWTH %>% arrange(LA_LINEAR_GROWTH$unit) ##trie par ordre croissant de nom de LC
+
+sel.secs <- unique(na.omit(LA_LINEAR_GROWTH$unit)) 
+length(sel.secs) 
+save(sel.secs, file = "./saved_objects/sel.secs.RData")
+TS= as.character(TS)
+
+
+LEAF_AREA_ESTIM =matrix(NA, nrow = length(emergence_date:harvest_date), ncol = length(unique(LA_LINEAR_GROWTH$unit)))
+colnames(LEAF_AREA_ESTIM) =unique(LA_LINEAR_GROWTH$unit)
+rownames(LEAF_AREA_ESTIM) = c(emergence_date:harvest_date)
+
+
+for (i in 1:nrow(LA_LINEAR_GROWTH)){ # for each unit
+  subset = LA_LINEAR_GROWTH[i,]
+  for (n in 2:nrow(LEAF_AREA_ESTIM)){ # for each date from 0 to harvest
+    if ((subset$unit[1] == colnames(LEAF_AREA_ESTIM)[i]) == TRUE) { #if it is the right unit 
+      LEAF_AREA_ESTIM[1,i] = subset$Slope 
+    LEAF_AREA_ESTIM[n,i] = LEAF_AREA_ESTIM[n-1,i] + subset$Slope # leaf area estimated is the value the day before +slope 
+    }
+  }
+  # print(i)
+}
+
+LEAF_AREA_ESTIM[nrow(LEAF_AREA_ESTIM),]
+LA_LINEAR_GROWTH$LA
+print("It should be the same value for each unit. Is it correct?  (measured with planimeter and estimated on the last day")
+  
+  
+}
+
+```
+
+###### 6. Process Plant Eye data 
+
+```{r integrate plant eye data }
+load(file= "./data/allData.RData")
+if ((planteye_save == "YES")==TRUE) {
+print("STAGE III: Process Plant Eye data with spatial correction")
+## some inputs come from V. Garin work LS
+## https://github.com/ICRISAT-GEMS/platformDataAnalysis
+
+##Input pe data and spatial correction
+pe_data <- allData$pe.df
+## !! note that pe_data have been prepared with position line andbllock... 
+colnames(pe_data) ## 1] "barcode","n","r", "old_unit", "unit",  "Line" ,  "Plot", "ID","genotype", "timestamp","timeNumber",  "Digital_biomass",...  
+
+##SI BESOIN DE RETOURNER au design 
+design_exp= allData$design
+
+pe_data$timestamp=  as.POSIXct(pe_data$timestamp, format = "%d/%m/%Y %H:%M", tz = "UTC") ## careful this format can change
+pe_data<-pe_data %>% arrange(timestamp) ##trie par ordre croissant
+
+
+## create date, time, and timepoint for the TP 
+pe_data$date= date(pe_data$timestamp)
+pe_data$time <- format(pe_data$timestamp, format = "%H:%M:%S")
+pe_data$timePoint <-  floor_date(pe_data$timestamp, unit = "20 minutes")
+
+
+# filter only measuring dates
+# pe_data$timestamp=  as.POSIXct(pe_data$timestamp, format = "%d/%m/%Y %H:%M", tz = "UTC") ## careful this format can change
+ start=which((pe_data$date) ==as.character(Date1))
+ end=which((pe_data$date) == as.character(Date2)) 
+pe_data=pe_data[(start[1]):(end[length(end)]),] 
+
+# pe_data=pe_data[dates[1]:dates[length(dates)],] 
+
+
+# add extra columns from the experimental design row col block for the next steps  
+nrow(pe_data)
+pe_data = merge(pe_data, design_exp, by = "unit", all.x = TRUE ) # keep all pe_data row
+nrow(pe_data) # is it good?  
+
+
+pe_data <- pe_data %>% select( timestamp, timePoint, date, time,  unit, Geno.x, Genotype.x, Replicates, Treatment.x, Block, Plot,X, Y, ID,
+                              X3D.Leaf.Area.mm.)
+
+## rename col 
+pe_data <- pe_data %>%
+  dplyr::rename(
+    Geno = Geno.x, 
+    Genotype = Genotype.x, 
+    Treatment =    Treatment.x,
+    Leaf_area=   X3D.Leaf.Area.mm., 
+    )
+
+# 
+# # PE pipeline: Creation of TP object
+# TP_PE <- createTimePoints(dat = pe_data,
+#                           experimentName = "Exp72",
+#                           genotype = "Genotype",
+#                           timePoint = "timePoint",
+#                           timeFormat =  "%Y-%m-%d %H:%M:%S",
+#                           plotId = "Plot",
+#                           rowNum = "X", colNum = "Y")
+# summary(TP_PE)
+# 
+# save(TP_PE, file=paste(opPATH.obj,"TP_PE.RData", sep = ""))
+# load(file=paste(opPATH.obj,"TP_PE.RData", sep = ""))
+# 
+# # PE pipeline: Spatial adjustment
+# 
+# Timepoint <- getTimePoints(TP_PE)
+# save(Timepoint, file =paste(opPATH.obj, "Timepoint.RData", sep = ""))
+# # 
+# # ## Plot the layout for the each point.
+# for (i in 1:nrow(Timepoint)) {
+#   png(file = paste(opPATH.spats,i, "_PE_LAYOUT.png", sep = "")) 
+#   plot<-
+#     plot(TP_PE, 
+#          plotType = "layout",
+#          timePoints = i,  
+#          traits = "Leaf_area")
+#   print(plot)
+#   dev.off()
+#   }
+# 
+# modPhenoSpGDP <- NULL
+# 
+# modPhenoSpGDP <- fitModels(TP = TP_PE,
+#                            trait = "Leaf_area",
+#                            timePoints = c(1:nrow(Timepoint)) )
+# 
+# save(modPhenoSpGDP, file = paste(opPATH.obj,"modPhenoSpGDP.RData", sep = ""))
+# load(file = paste(opPATH.obj,"modPhenoSpGDP.RData", sep = ""))
+# 
+# summary(modPhenoSpGDP)
+# # 
+# ### plot SPATS results over timePoint
+# for (i in 1:nrow(Timepoint)) {
+#   png(file = paste(opPATH.spats,i, "_SPATS.png", sep = "")) 
+#   plot(modPhenoSpGDP,
+#        timePoints =  i,
+#        plotType = "spatial",
+#        spaTrend = "percentage",
+#        colorBy = "repId")
+#   dev.off()
+# }
+# 
+# ## Plot heritability over time
+# png(file = paste(opPATH.spats,i, "_H2_over_time.png", sep = "")) 
+# plot(modPhenoSpGDP,
+#      plotType = "herit",
+#      ylim = c(0.5,1))
+# getHerit(modPhenoSpGDP)
+# dev.off()
+# 
+# ## Plot residual, column and raw variance over time
+# png(file = paste(opPATH.spats,i, "_variance_over_time.png", sep = "")) 
+# plot(modPhenoSpGDP,
+#      plotType = "variance")
+# dev.off()
+# 
+# ## Extract the corrected values:
+# spatCorrSpGDP <- getCorrected(modPhenoSpGDP, timePoints = 1:nrow(Timepoint))
+# write.table(spatCorrSpGDP, paste(opPATH.spats,"Leaf_Area_Corrected_statgenHTP.csv", sep = ""))
+# 
+# 
+# save(spatCorrSpGDP, file = paste(opPATH.obj,"spatCorrSpGDP.RData", sep = "" ))
+# load(file = paste(opPATH.obj,"spatCorrSpGDP.RData", sep = "" ))
+# 
+# spatCorrSpGDP$genotype= as.factor(spatCorrSpGDP$genotype)
+# spatCorrSpGDP$timePoint= as.factor(spatCorrSpGDP$timePoint)
+
+pe_data$geno_rep_trt = paste(pe_data$Genotype, pe_data$Replicates, pe_data$Treatment, sep = "_")
+}
+
+# plot 3D LA PE - timestamp
+```
+
+```{r should i use spats to corrected 3D LA}
+
+# ## should we used 3D LA corrected or 3D-LA raw : ANOVA LA - repetition significant or not ?
+## this makes no sense in the context of this experiment CANOPY VS INDIVIDUAL! Here, of course, spatial difference of LA because there are canopy area and individual area, on different row and col !! no correction here was applied
+
+
+# pe_data$date = as.factor(pe_data$date)
+# pe_data$Genotype = as.factor(pe_data$Genotype)
+# pe_data$Replicates = as.factor(pe_data$Replicates)
+# 
+# for (i in levels(pe_data$date)) {
+# 
+#   exemple_i <- pe_data %>%
+#     dplyr::filter(pe_data$date== i)
+# 
+#   model=lm(Leaf_area~Replicates*Genotype, data = pe_data)
+#   aov<-Anova(model)
+#   print(aov)
+# 
+# }
+
+
+
+```
+
+
+```{r calculate & plot  median 3DLA as function of time for all genotypes}
+pe_data$Genotype = as.factor(pe_data$Genotype)
+nlevels(pe_data$Genotype)
+
+ dt <- as.data.table(pe_data)
+ dt[, date := as.Date(timestamp)]
+ daily_median_by_geno <- dt[, .(median_leaf_area = median(Leaf_area, na.rm=TRUE)), by = .(Genotype, date)]
+daily_median_by_geno <- daily_median_by_geno %>%
+  mutate(date = as.POSIXct(date))
+
+
+# Plot
+ plot = 
+ggplot(daily_median_by_geno, aes(x = date, y = median_leaf_area, color = Genotype)) +
+  geom_line() +
+  geom_point() +
+    scale_x_datetime(
+      date_breaks = "1 day",
+      date_labels = "%Y-%m-%d"
+    ) +
+  labs(
+    title = "Median daily 3D LA PE by Genotype",
+    x = "Date",
+    y = "Median Leaf Area (mm²)",
+    color = "Genotype"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+ggsave("./results/profile/plot_3DLA_PE_by_genotype.png", plot = plot, width = 10, height = 6)
+```
+
+```{r remove outliers 3D la values and plot a cleaned version }
+# PE pipeline: remove tp with too high missing values
+
+# remove days progressively the end of the exp until obtain a linear regression 
+sel_tp <- sort(unique(pe_data$timePoint)) # all timePoint in the TS
+sel_tp<-sel_tp[order(sel_tp)]
+sel_tp
+
+sel_tp <- sel_tp[-c(58:length(sel_tp))] # remove last days one by one, We decide to keep only the linear part at the start of the exp, until the "03-10", where we see a inflexion point
+
+sel_tp 
+pe_data <- pe_data[pe_data$timePoint %in% sel_tp, ]
+
+save(pe_data,file = paste(opPATH.obj,"pe_data.RData", sep = ""))
+load(file = paste(opPATH.obj,"pe_data.RData", sep = ""))
+
+
+ dt <- as.data.table(pe_data)
+ dt[, date := as.Date(timestamp)]
+ daily_median_by_geno <- dt[, .(median_leaf_area = median(Leaf_area, na.rm=TRUE)), by = .(Genotype, date)]
+daily_median_by_geno <- daily_median_by_geno %>%
+  mutate(date = as.POSIXct(date))
+dt<-dt %>% arrange(timestamp) ##trie par ordre croissant
+
+# Plot
+ plot_rmd = 
+ggplot(daily_median_by_geno, aes(x = date, y = median_leaf_area, color = Genotype)) +
+  geom_line() +
+  geom_point() +
+    scale_x_datetime(
+      date_breaks = "1 day",
+      date_labels = "%Y-%m-%d"
+    ) +
+  labs(
+    title = "Median daily 3D LA PE (cleaned) by Genotype",
+    x = "Date",
+    y = "Median Leaf Area (mm²)",
+    color = "Genotype"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+ggsave("./results/profile/plot_3DLA_PE_rmd_out_by_genotype.png", plot = plot_rmd, width = 10, height = 6)
+
+```
+
+```{r remove outliers 3D la values and plot a cleaned version }
+# PE pipeline: remove tp with too high missing values
+
+# remove days progressively the end of the exp until obtain a linear regression 
+sel_tp <- sort(unique(pe_data$timePoint)) # all timePoint in the TS
+sel_tp<-sel_tp[order(sel_tp)]
+sel_tp
+
+sel_tp <- sel_tp[-c(49:length(sel_tp))] # remove last days one by one, We decide to keep only the linear part at the start of the exp, until the "03-10", where we see a inflexion point
+
+sel_tp 
+pe_data <- pe_data[pe_data$timePoint %in% sel_tp, ]
+
+save(pe_data,file = paste(opPATH.obj,"pe_data.RData", sep = ""))
+load(file = paste(opPATH.obj,"pe_data.RData", sep = ""))
+
+
+ dt <- as.data.table(pe_data)
+ dt[, date := as.Date(timestamp)]
+ daily_median_by_geno <- dt[, .(median_leaf_area = median(Leaf_area, na.rm=TRUE)), by = .(Genotype, date)]
+daily_median_by_geno <- daily_median_by_geno %>%
+  mutate(date = as.POSIXct(date))
+dt<-dt %>% arrange(timestamp) ##trie par ordre croissant
+
+# Plot
+ plot_rmd = 
+ggplot(daily_median_by_geno, aes(x = date, y = median_leaf_area, color = Genotype)) +
+  geom_line() +
+  geom_point() +
+    scale_x_datetime(
+      date_breaks = "1 day",
+      date_labels = "%Y-%m-%d"
+    ) +
+  labs(
+    title = "Median daily 3D LA PE (cleaned) by Genotype",
+    x = "Date",
+    y = "Median Leaf Area (mm²)",
+    color = "Genotype"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+ggsave("./results/profile/plot_3DLA_PE_rmd_out2_by_genotype.png", plot = plot_rmd, width = 10, height = 6)
+
+```
+
+###### 7. Calcul and plot median_daily_3DLA_non_converted_NA
+
+```{r calcul median_daily_3DLA_non_converted_NA}
+dt <- as.data.table(pe_data)
+dt[, date := as.Date(timestamp)]
+daily_median_by_geno <- dt[, .(
+  median_leaf_area = median(Leaf_area, na.rm = TRUE)
+), by = .(Genotype, date, Treatment, geno_rep_trt, unit)]
+
+daily_median_by_geno <- daily_median_by_geno %>%
+  mutate(
+    date = as.POSIXct(date),
+    geno_rep_trt = as.factor(geno_rep_trt)
+  )
+daily_median_by_geno$unit= as.factor(daily_median_by_geno$unit)
+nlevels(daily_median_by_geno$unit)
+```
+
+
+```{r plot median_daily_3DLA_non_converted_NA}
+path_non_converted <- "./results/profile/median_daily_3DLA_non_converted_NA/"
+if (!dir.exists(path_non_converted)) dir.create(path_non_converted)
+
+for (i in 1:nlevels(daily_median_by_geno$unit)) {
+  LC <- levels(daily_median_by_geno$unit)[i]
+
+  
+  df_sub <- filter(daily_median_by_geno, daily_median_by_geno$unit == LC) ## filt for each unit 
+  df_sub <- arrange(df_sub, date) ## filt for each unit 
+
+
+  safe_unit_name <- gsub(":", "_", LC) # if there is some : in the unit name
+  safe_geno_trt <- df_sub$geno_rep_trt[1]
+
+
+  filename <- paste0(path_non_converted, safe_unit_name, ".png")
+  
+  png(filename = filename, width = 800, height = 600)
+  
+  p <- ggplot(df_sub, aes(x = date, y = median_leaf_area)) +
+    geom_point(color = "darkred") +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    stat_poly_eq(
+      aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+      formula = y ~ x,
+      parse = TRUE,
+      label.x.npc = "left",
+      label.y.npc = 0.95
+    ) +
+    scale_x_datetime(date_labels = "%d-%m", date_breaks = "1 day")+
+
+    labs(
+      title = paste("Median 3D Leaf Area over time (non converted) -", safe_unit_name, sep = ""),
+      x = "Time",
+      y = paste("Median 3D Leaf Area (mm²)", safe_geno_trt, sep = "")
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  print(p)
+  dev.off()
+}
+
+
+```
+
+we have daily 3D LA values, we want to apply only on the same LC and TS saved in the ETr profile
+
+```{r prepare dataframe and load useful objects }
+
+if ((planteye_save == "YES")==TRUE) {
+
+# conversion3D-LA observed LA
+
+# create files adapted for Kar et al pipeline LAI.mat with the TS and LC linked with the Etr profile
+load(file = "./saved_objects/data_combined.RData") 
+ncol(data_combined)
+  
+  TS = colnames(data_combined)[7:ncol(data_combined)]
+
+  LC = data_combined$unit[9:ncol(data_combined)]
+LC = na.omit(LC)
+LC = as.character(LC)
+length(TS) #  1279
+
+
+LAI.mat <- matrix(NA, nrow = length(LC), ncol = length(TS))
+rownames(LAI.mat) <- LC
+colnames(LAI.mat) = TS
+save(LAI.mat, file = "./saved_objects/LAI.mat.RData")
+
+unq.dts <- unique(substr(colnames(data_combined)[-c(1:6)], 1, 10))
+length(unq.dts)
+
+# LAI.mat <- LAI.mat[order(match(rownames(LAI.mat), 
+#                                ETr_smoothFILE[(9:nrow(ETr_smoothFILE)), "unit"])),]
+
+LAI.all.dates <- LAI.mat; unq.dts.copy <- unq.dts
+
+LAI.all.dates <- LAI.all.dates[ , c(1:length(unq.dts))]
+colnames(LAI.all.dates) <- c(as.character(unq.dts.copy))
+
+}
+```
+
+```{r df LAI.all.dates - all median per day of PE data, ie 3D non converted in mm², on the TS and LC saved for analysis}
+daily_median_by_geno$date = gsub("UTC", "",daily_median_by_geno$date )
+daily_median_by_geno$date = gsub("CET", "",daily_median_by_geno$date )
+
+daily_median_by_geno$date = as.character(daily_median_by_geno$date)
+
+
+for(i in 1:length(LC) ){ ## for all unit 
+la.df.tmp <- daily_median_by_geno[daily_median_by_geno$unit == LC[i], ] ## select unit in common between pe.data and LAI
+    
+date.mat <- data.frame(date = unq.dts, val = rep(NA, length(unq.dts))) ## create df with date, val (empty, length unique date) take into account all dates, even when there is Na in the previous df because no scan was done)
+  date.mat$date = ymd(date.mat$date)
+  for(j in 1:nrow(date.mat)) ## for all row of this date.mat df (
+  {
+    ifelse(date.mat$date[j] %in% la.df.tmp$date, 
+           date.mat$val[j] <- la.df.tmp$median_leaf_area[la.df.tmp$date == date.mat$date[j]],
+           date.mat$val[j] <- NA)    ## fill in df with val= median per date
+  }
+  
+  sec.lai.dates <- rep(date.mat$val, each =1)
+    LAI.all.dates[i, ] <- sec.lai.dates
+}
+#result : LAI.all.dates : contains all median per day of PE data, ie 3D non converted in mm², on the TS and LC saved for analysis
+```
+
+###### 8. conversion mm² to cm² for planimeter
+
+```{r conversion mm² to cm² for planimeter}
+
+for(i in 1:nrow(LAI.all.dates)){ ## for all unit 
+         LAI.all.dates[i, ] <- ( LAI.all.dates[i, ]/100)
+}
+
+
+PE_MEDIAN_LA_CM2 = LAI.all.dates
+save(PE_MEDIAN_LA_CM2, file = paste(opPATH.obj,"PE_MEDIAN_LA_CM2.RData", sep = ""))
+load(file = paste(opPATH.obj,"PE_MEDIAN_LA_CM2.RData", sep = ""))
+
+# result : LAI.all.dates : contains all median per day of PE data, ie 3D non converted in CM²,  ! 
+
+
+```
+
+###### 9. Conversion with Vadez et al equation
+
+```{r conversion with Vadez et al equation }
+# Relation from Vadez  et al. 2015 LeasyScan: a novel concept ... )
+  # y=  3DLA x= Observed LA. Relation species-dependant
+  # y=0.36x +29.9             --> Observed LA(x) = (3DLA_mm²/0.36)-29.9 for pearl millet
+  # y=0.36x +63.2             --> Observed LA(x) = (3DLA_mm²/0.36)-63.2  for peanut
+  # y=0.39x + 302.2           --> Observed LA(x) = (3DLA_mm²/0.39)-302.2 for cowpea
+
+
+print("we'll need to know more about the species you're working on. Is it closer to pearl millet, cow pea or peanut? (only 3 possibilities for now (Vadez et al. 2015) ")
+
+species <- readline(prompt = "Which choice is closest to your studied species? Required: PEARL_MILLET, PEANUT, COW_PEA : ") 
+for(i in 1:nrow(LAI.all.dates)){ ## for all unit 
+
+if ((species == "PEARL_MILLET")==TRUE)  {
+       LAI.all.dates[i, ] <- ( LAI.all.dates[i, ]/ 0.36)-29.9   }
+  
+   # 
+   # if ((species == "PEANUT")==TRUE)  {
+   #     LAI.all.dates[i, ] <- (((sec.lai.dates/100) - 63.2)/0.36) ##for PEANUT
+   # }
+   # if ((species == "COW_PEA")==TRUE)  {
+   #     LAI.all.dates[i, ] <- (((sec.lai.dates/100) - 302.2)/0.39) ##for COW_PEA 
+   # }
+   # 
+
+  # 
+# result : LAI.all.dates : contains all median per day of PE data converted with Vadez equations in cm²,  ! 
+}
+
+
+LA_CONVERTED= LAI.all.dates
+save(LA_CONVERTED, file = paste(opPATH.obj,"LA_CONVERTED.RData", sep = ""))
+load(file = paste(opPATH.obj,"LA_CONVERTED.RData", sep = ""))
+```
+
+```{r plot  conversion with Vadez et al equation }
+data=as.data.frame(t(LA_CONVERTED))
+data$TS = rownames(data)
+data <- data[, c("TS", setdiff(names(data), "TS"))]
+
+data_num <- as.data.frame(apply(data[,2:ncol(data)], 2, as.numeric))  # Convert all variable types to numeric
+data= cbind(data[1], data_num)
+data$TS = as.Date(data$TS)
+
+
+path_converted = "./results/profile/median_daily_3DLA_converted_NA/"
+if(!dir.exists(path_converted)) {
+  dir.create(path_converted)
+}
+
+ for ( i in 2: ncol(data)) {
+   
+  safe_name = gsub(":","_",colnames(data)[i])
+# for ( i in 2:10) {
+
+  png(file = paste(path_converted,safe_name, ".png", sep = ""))
+  plot<-
+    ggplot(data =data, aes(x=data[,1], y= data[,i]))+ ## data[,1] = TS
+    ylab("Leaf area cm² ")+
+     geom_smooth(method = "lm", se = FALSE, color = "red") +
+    stat_poly_eq(
+      aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+      formula = y ~ x,
+      parse = TRUE,
+      label.x.npc = "left",
+      label.y.npc = 0.95
+    ) +
+    xlab("Timestamp")+
+    labs(title = paste("Leaf area  converted with Vadez et al. equation, cm² ",colnames(data)[i]))+
+    geom_point(aes(y = data[,i]), color = "darkred")+
+    scale_x_date(date_labels = "%d-%m", date_breaks = "1 day")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+   print(i)
+ }
+
+
+
+```
+
+###### 10. add planimeter data in df as final date of measurement
+
+```{r add planimeter data in df as final date of measurement }
+### insert planimeter values
+final_LA = allData$final_LA
+final_LA = as.data.frame(final_LA)
+
+## * 4 if HD only 
+
+final_LA <- final_LA %>%
+  mutate(LEAF_AREA_4 = ifelse(TRT %in% c("PM_HD", "SG_HD"), leaf_area * 4, leaf_area))
+
+# merge planimeter data and LAI calculated with unit col
+LAI.all.dates= as.data.frame(LAI.all.dates)
+LAI.all.dates$unit = rownames(LAI.all.dates)
+LAI.all.dates <- LAI.all.dates[, c("unit", setdiff(names(LAI.all.dates), "unit"))]
+
+LAI_metad <- merge(LAI.all.dates, final_LA, by = "unit", sort = FALSE)
+
+LAI = LAI_metad %>% select("2025-02-25","2025-02-26","2025-02-27","2025-03-01","2025-03-02","2025-03-04","2025-03-05","2025-03-06","2025-03-07","2025-03-08","2025-03-09","2025-03-10","2025-03-11", "LEAF_AREA_4")
+
+rownames(LAI) = LAI_metad$unit
+
+
+
+colnames(LAI)[ncol(LAI)-1]
+day_before_harvest = colnames(LAI)[ncol(LAI)-1] 
+date_obj <- as.Date(day_before_harvest)
+final_date <- as.POSIXct(date_obj + 1)
+
+
+final_date_str <- format(final_date, "%Y-%m-%d")  # s'assurer que c'est bien un string
+colnames(LAI)[colnames(LAI) == "LEAF_AREA_4"] <- final_date_str  # now the harvest, measured with planimeter is the last date
+
+  # load(file = paste (opPATH.obj, "LC.RData", sep = ""))
+  
+ LAI$unit = rownames(LAI)
+LAI <- LAI[, c("unit", setdiff(names(LAI), "unit"))]
+## plot RAW LAI and PLANIMETER DATA
+
+LA_CONVERTED_HARVEST=LAI
+save(LA_CONVERTED_HARVEST, file = paste(opPATH.obj,"LA_CONVERTED_HARVEST.RData", sep = ""))
+load(file = paste(opPATH.obj,"LA_CONVERTED_HARVEST.RData", sep = ""))
+
+```
+
+```{r plot converted LA values +  planimeter data  }
+path_LA_CONVERTED_HARVEST = "./results/profile/median_daily_3DLA_converted_planimeter_NA/"
+if(!dir.exists(path_LA_CONVERTED_HARVEST)) {
+  dir.create(path_LA_CONVERTED_HARVEST)
+}
+
+
+data=as.data.frame(t(LA_CONVERTED_HARVEST))
+data=data [-1,]
+data$TS = rownames(data)
+data <- data[, c("TS", setdiff(names(data), "TS"))]
+
+data_num <- as.data.frame(apply(data[,2:ncol(data)], 2, as.numeric))  # Convert all variable types to numeric
+data= cbind(data[1], data_num)
+data$TS = as.Date(data$TS)
+for ( i in 2: ncol(data)) {
+# for ( i in 2:10) {
+  
+    safe_name = gsub(":","_",colnames(data)[i])
+
+  png(file = paste(path_LA_CONVERTED_HARVEST,safe_name, ".png", sep = ""))
+
+  plot<-
+    ggplot(data =data, aes(x=data[,1], y= data[,i]))+ ## data[,1] = TS
+    ylab("Leaf area cm²")+
+    xlab("Timestamp")+
+    labs(title = paste("Leaf area  converted  + planimeter ",safe_name))+
+    stat_poly_eq(
+      aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+      formula = y ~ x,
+      parse = TRUE,
+      label.x.npc = "left",
+      label.y.npc = 0.95
+    ) +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    geom_point(aes(y = data[,i]), color = "darkred")+
+    scale_x_date(date_labels = "%d-%m", date_breaks = "1 day")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+   print(i)
+ }
+
+
+
+```
+
+###### 11. change NA for slope growth values
+
+```{r change NA based on regression linear }
+
+LA_all_day <- as.data.frame(t(LAI))
+LA_all_day <- LA_all_day[-1, ]  
+LA_all_day[] <- lapply(LA_all_day, function(x) as.numeric(as.character(x)))
+
+t = rownames(LA_all_day)
+t= as.Date(t)
+i=1
+
+
+for (i in 1:ncol(LA_all_day)){
+y=LA_all_day[,i]
+
+# Créer un modèle linéaire à partir des valeurs connues
+mod <- lm(y ~ t, data = data.frame(t = t, y = y))
+
+# predict NA values 
+y_full <- y
+missing <- is.na(y)
+y_full[missing] <- predict(mod, newdata = data.frame(t = t[missing]))
+
+
+LA_all_day[,i] = y_full
+
+}
+```
+
+
+
+
+<!-- ```{r change NA for value before/after +/- slope growth values} -->
+<!-- ### replace NA  with last measure +slope value of LAI over time -->
+<!-- # add missing dates ! otherwise the slope (ie. daily growth is going to be wrong) -->
+
+<!-- unq.dts <- as.Date(sort(unq.dts)) -->
+<!-- dates_completes <- seq(unq.dts[1], unq.dts[length(unq.dts)], by = "day") -->
+<!-- date.mat <- data.frame(date = dates_completes) ## create df with date, val (empty, length unique date) -->
+<!-- date.mat$date = ymd(date.mat$date) -->
+
+
+<!-- LA_all_day <- matrix(NA, nrow = length(LC), ncol = length(dates_completes)) -->
+<!-- rownames(LA_all_day) <- as.character(LC) -->
+<!-- colnames(LA_all_day) = as.character(dates_completes) -->
+<!-- LA_all_day = as.data.frame(LA_all_day) -->
+<!-- LA_all_day$unit= as.character(rownames(LA_all_day)) -->
+
+<!-- LA_all_day <- LA_all_day %>% -->
+<!--   select(all_of("unit"), everything()) -->
+
+<!-- for (i in 1:nrow(LA_all_day)) { # for each LC  -->
+<!--   data_LC=LAI[i,2:ncol(LAI)] -->
+<!--   data_unit= as.data.frame(c(t(data_LC))) -->
+<!--   data_unit$date =  colnames(data_LC) -->
+<!--   date.mat= merge(date.mat, data_unit, by="date", all.x = TRUE) -->
+<!--   date.mat =date.mat[, colSums(!is.na(date.mat)) > 0] -->
+<!--   colnames(date.mat)= c("date", "val") -->
+
+
+<!--   if (sum(is.na(date.mat$val))!= length(date.mat$val)) { ## make sure it is not just NA -->
+<!--     mod<-lm(formula =val~date, data = date.mat) -->
+<!--     slope=as.numeric(mod$coefficients[2]) -->
+
+<!--     first_non_na_idx <- which(!is.na(date.mat$val))[1] # first val non NA -->
+
+<!--     if (first_non_na_idx > 1) { ## in case of NA since the beginning -->
+<!--       for (k in (first_non_na_idx - 1):1) { -->
+<!--         date.mat$val[k] <- date.mat$val[k + 1] - slope -->
+<!--       } -->
+<!--     } -->
+
+
+<!--     for(j in 1:length(date.mat$val)){ ## otherwise data from the day before + slope -->
+<!--       if(is.na(date.mat$val[j])== TRUE){ -->
+<!--         date.mat$val[j]= date.mat$val[j-1]+slope} else {j=j+1} -->
+<!--     } -->
+
+
+
+<!--   } -->
+<!--    LA_all_day[i,2:ncol(LA_all_day)]=date.mat$val -->
+<!-- date.mat$val = NA -->
+<!--     print(i) -->
+<!-- } -->
+
+
+<!-- save(LA_all_day, file = "./saved_objects/LA_all_day.RData") -->
+<!-- load(file = paste(opPATH.obj,"LA_all_day.RData", sep = "")) -->
+
+<!-- write.table(LA_all_day, file = paste(opPATH,"LA_observed_converted3D_plani_estim.csv", sep = "")) -->
+
+
+<!-- max_df=as.data.frame(colMax(LA_all_day[,2:ncol(LA_all_day)]))  -->
+<!-- max(max_df[1:nrow(max_df),])  -->
+<!-- min_df=as.data.frame(colMin(LA_all_day[,2:ncol(LA_all_day)])) -->
+<!-- min(min_df[1:nrow(min_df),])  -->
+
+
+<!-- ## removed negative LAI if present  -->
+<!-- for (j in (2:ncol(LA_all_day))){  -->
+<!--   for (i in 1:nrow(LA_all_day)) {  -->
+<!--     LA_all_day[i,j][LA_all_day[i,j]<0]<- NA  -->
+<!--   } -->
+<!-- } -->
+<!-- ``` -->
+
+```{r plot LA values converted + planimter + estim with slope}
+##LAI values per day with LAI converted until 9 oct + slope value + planimeter
+data=as.data.frame(LA_all_day)
+data$TS = rownames(data)
+data <- data[, c("TS", setdiff(names(data), "TS"))]
+
+data_num <- as.data.frame(apply(data[,2:ncol(data)], 2, as.numeric))  # Convert all variable types to numeric
+data= cbind(data[1], data_num)
+data$TS = as.Date(data$TS)
+
+
+path_daily_LA = "./results/profile/LA_converted_plani_slope/"
+if(!dir.exists(path_daily_LA)) {
+  dir.create(path_daily_LA)
+}
+
+
+
+for ( i in 2: ncol(data)) {
+# for ( i in 2:10) {
+  
+    safe_name = gsub(":","_",colnames(data)[i])
+
+  png(file = paste(path_daily_LA,safe_name, ".png", sep = ""))
+
+  plot<-
+    ggplot(data =data, aes(x=data[,1], y= data[,i]))+ ## data[,1] = TS
+    ylab("Leaf area cm²")+
+    xlab("Timestamp")+
+    labs(title = paste("Leaf area  converted  + planimeter + estimated ",safe_name))+
+    stat_poly_eq(
+      aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+      formula = y ~ x,
+      parse = TRUE,
+      label.x.npc = "left",
+      label.y.npc = 0.95
+    ) +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    geom_point(aes(y = data[,i]), color = "darkred")+
+    scale_x_date(date_labels = "%d-%m", date_breaks = "1 day")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+   print(i)
+ }
+
+
+
+
+
+save(LA_all_day, file =  paste(opPATH.obj,"LA_all_day.RData", sep = ""))
+
+}}
+```
+
+`
+###### 12. LA per interval of 15 min
+
+```{r CALCUL LEAF AREA  PER INTERVAL of 15 min  }
+if ((planteye_save == "YES")==TRUE) {
+
+# create TS all day
+time_seq <- seq(from = as.POSIXct("00:00", format = "%H:%M"),
+                to = as.POSIXct("23:45", format = "%H:%M"),
+                by =  paste(seq_by, "min")) %>% format("%H:%M:%S")
+df_long = as.data.frame(t(LA_all_day)) 
+df_long$unit = rownames(df_long)
+
+# create df with unit, date, daily value   
+
+
+df_long <- df_long %>%  
+  pivot_longer(
+    cols = -unit, #toutes les colonnes sauf `unit`
+    names_to = "date",
+    values_to = "daily_value"
+  ) %>%
+  mutate(date = as.Date(date))
+            
+df_expanded <- df_long %>%
+  mutate(time = list(time_seq)) %>%
+  unnest(time) %>%
+  mutate(
+    datetime = as.POSIXct(paste(date, time), format = "%Y-%m-%d %H:%M:%S")
+  ) %>%
+  select(unit, datetime, daily_value)
+
+
+# come back to the format wanted from Kar et al
+
+val_per_interval <- df_expanded %>%
+  select(unit, datetime, daily_value) %>%
+  pivot_wider(names_from = datetime, values_from = daily_value)
+
+
+rownames(val_per_interval) = val_per_interval$unit
+
+save(val_per_interval, file =  paste(opPATH.obj,'val_per_interval.RData', sep = ""))
+load(file =  paste(opPATH.obj,'val_per_interval.RData', sep = ""))
+
+write.table(val_per_interval, file = paste(opPATH,"val_per_interval.csv", sep = ""), row.names = F, sep = ";")
+
+
+# rcome back to TS saved in ETr profile (irrgation removed.. )
+load(file = paste0("./saved_objects/data_combined.RData"))
+datetimes_to_keep  = colnames(data_combined)[7:ncol(data_combined)]
+datetimes_to_keep   = as.POSIXct(datetimes_to_keep,  format = "%Y-%m-%d %H:%M:%S", tz = "UTC" )
+
+#  columns datetime to keep in LA df
+datetime_cols <- setdiff(names(val_per_interval), "unit")
+
+
+datetime_cols = as.POSIXct(datetime_cols,  format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+
+datetime_cols <- ifelse(
+  grepl("^\\d{4}-\\d{2}-\\d{2}$", datetime_cols),
+  paste0(datetime_cols, " 00:00:00"),
+  datetime_cols
+)
+datetime_cols_posix <- as.POSIXct(datetime_cols, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+
+cols_to_keep <- names(val_per_interval)[
+  names(val_per_interval) == "unit" |
+  datetime_cols_posix %in% datetimes_to_keep
+]
+
+
+cols_to_keep <- ifelse(
+  grepl("^\\d{4}-\\d{2}-\\d{2}$", cols_to_keep),
+  paste0(cols_to_keep, " 00:00:00"),
+  cols_to_keep
+)
+
+datetimes_to_keep_chr <- format(as.POSIXct(datetimes_to_keep), format = "%Y-%m-%d %H:%M:%S")
+existing_cols <- intersect(datetimes_to_keep_chr, names(val_per_interval))
+cols_to_keep <- c("unit", existing_cols)
+val_per_interval_out_rmd <- val_per_interval[, cols_to_keep, drop = FALSE]
+rownames(val_per_interval_out_rmd) = val_per_interval_out_rmd$unit
+save(val_per_interval_out_rmd, file = paste (opPATH.obj, "val_per_interval_out_rmd.RData", sep = ""))
+load(file = paste (opPATH.obj, "val_per_interval_out_rmd.RData", sep = ""))
+
+write.table(val_per_interval_out_rmd, file = paste(opPATH,"val_per_interval_out_rmd.csv", sep = ""), sep = ";", dec = ".")
+```
+
+###### plot LA over time
+
+```{r  plot LA over time to check the profile }
+
+
+data=as.data.frame(t(val_per_interval_out_rmd))
+data = data[-1,]
+data$TS = rownames(data)
+data <- data[, c("TS", setdiff(names(data), "TS"))]
+
+data_num <- as.data.frame(apply(data[,2:ncol(data)], 2, as.numeric))  # Convert all variable types to numeric
+data= cbind(data[1], data_num)
+data$TS = as.POSIXct(data$TS)
+
+# i=1
+#for ( i in 1: ncol(data)) {
+
+
+
+
+
+path_LA_15min = "./results/profile/LA_over_time/"
+if(!dir.exists(path_LA_15min)) {
+  dir.create(path_LA_15min)
+}
+
+
+
+for ( i in 2: ncol(data)) {
+# for ( i in 2:10) {
+  
+    safe_name = gsub(":","_",colnames(data)[i])
+
+  png(file = paste(path_LA_15min,safe_name, ".png", sep = ""))
+
+  plot<-
+    ggplot(data =data, aes(x=data[,1], y= data[,i]))+ ## data[,1] = TS
+    ylab("Leaf area cm²")+
+    xlab("Timestamp")+
+    labs(title = paste("Leaf area over time  ",safe_name))+
+    stat_poly_eq(
+      aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+      formula = y ~ x,
+      parse = TRUE,
+      label.x.npc = "left",
+      label.y.npc = 0.95
+    ) +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    geom_point(aes(y = data[,i]), color = "darkred")+
+scale_x_datetime(date_labels = "%d-%m", date_breaks = "1 day")+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+   print(i)
+ }
+
+
+
+```
+
+<!-- ```{r CALCUL LEAF AREA } -->
+
+<!-- if ((planteye_save == "YES")==TRUE) { -->
+
+<!-- ################################ 3. CALCUL LEAF AREA ################################  -->
+
+<!-- # Leaf Area Index  = Leaf Area /surface de LC  -->
+
+<!-- # Leaf Area =Leaf Area Index * surface LC  -->
+
+<!-- # LA = LAI * 0.26 m² -->
+
+<!-- LEAF_AREA= data.frame(matrix(NA, nrow = nrow(LAI.mat), ncol =  ncol(LAI.mat))) -->
+
+<!-- for (i in 1:nrow(LAI.mat)){ -->
+
+<!--   LEAF_AREA[i, ] <- LAI.mat[i, ]* 0.26  -->
+
+<!--   print(i) -->
+
+<!-- } -->
+
+<!-- colnames(LEAF_AREA) = TS  -->
+
+<!-- ## !! now all row in LC ascending order : should start with 131:07:02 -->
+
+<!-- LC = rownames(LAI.mat) -->
+
+<!-- rownames(LEAF_AREA)= LC -->
+
+<!-- colnames(LEAF_AREA)=TS -->
+
+<!-- save(LEAF_AREA,  file = paste (opPATH.obj, "LEAF_AREA.RData", sep = "")) -->
+
+<!-- ## removed outliers  -->
+
+<!-- max_df=as.data.frame(colMax(LEAF_AREA))  -->
+
+<!-- max(max_df[1:nrow(max_df),]) # -->
+
+<!-- min_df=as.data.frame(colMin(LEAF_AREA)) -->
+
+<!-- min(min_df[1:nrow(min_df),]) ##   -->
+
+<!-- save(LEAF_AREA, file = paste(opPATH.obj,"LEAF_AREA_rmd_out.RData", sep = "")) -->
+
+<!-- write.table(LEAF_AREA, file = paste(opPATH,"LEAF_AREA.csv", sep= ""), sep = ";", dec = ".") -->
+
+<!-- data=as.data.frame(t(LEAF_AREA)) -->
+
+<!-- colnames(data)= LC -->
+
+<!-- rownames(data)=TS -->
+
+<!-- data$TS= TS -->
+
+<!-- data$TS =ymd_hms(data$TS) -->
+
+<!-- i=1 -->
+
+<!-- # for ( i in 1: ncol(data)) { -->
+
+<!--   png(file = paste(opPATH.profile,i, "LA_over_time.png", sep = "")) -->
+
+<!--   plot<- -->
+
+<!--     ggplot(data =data, aes(x=TS))+ -->
+
+<!--     ylab("Leaf area (m²) ")+ -->
+
+<!--     xlab("Timestamp")+ -->
+
+<!--     labs(title = paste("Leaf area ",colnames(data)[i]))+ -->
+
+<!--     geom_point(aes(y = data[,i]), color = "darkgreen")+ -->
+
+<!--     ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+ -->
+
+<!--     theme(axis.text.x=element_text(angle = -45, hjust = 0)) -->
+
+<!--   print(plot) -->
+
+<!--   dev.off() -->
+
+<!-- #   print(i) -->
+
+<!-- # } -->
+
+<!-- } -->
+
+<!-- ``` -->
+
+<!-- ```{r leaf area estimated per day of mesurement} -->
+
+<!-- ####################### workspace #######################  -->
+
+<!-- unq.dts <- unique(substr(colnames(wthr.ETref.ETobs)[-c(1:6)], 1, 10)) -->
+
+<!-- length(unq.dts) -->
+
+<!-- ## choose only date measured apply unique dates si (suppose ) -->
+
+<!-- rownames(LEAF_AREA_ESTIM)[(nrow(LEAF_AREA_ESTIM)-(length(unq.dts)-1)):nrow(LEAF_AREA_ESTIM)] <- unq.dts -->
+
+<!-- # Appliquer les rownames en partant des dernières lignes (jours avant recolte) -->
+
+<!-- LEAF_AREA_day = LEAF_AREA_ESTIM[rownames(LEAF_AREA_ESTIM) %in% unq.dts, ] -->
+
+<!-- ### we have now leaf area estimate per day !! -->
+
+<!-- ## apply that to the interval of 15-30 min -->
+
+<!-- ``` -->
+
+<!-- ###### we have now leaf area estimate per day, that we need to apply for the time interval of  15-30 min -->
+
+<!-- ```{r leaf area estimated per time interval} -->
+
+<!-- LEAF_AREA_day = t(LEAF_AREA_day) -->
+
+<!-- ## create TS all day -->
+
+<!-- start_seqby= ymd_hms(paste(ymd(unq.dts[1]),as.character("00:00:00"))) -->
+
+<!-- end_seqby= ymd_hms(paste(ymd(unq.dts[length(unq.dts)]),as.character("23:45:00"))) -->
+
+<!-- start_seqby -->
+
+<!-- end_seqby -->
+
+<!-- TS_seqby= seq(start_seqby,end_seqby, by = paste (seq_by, "mins")) -->
+
+<!-- length(TS_seqby) -->
+
+<!-- val_per_interval= data.frame(matrix(NA, nrow = nrow(LEAF_AREA_day), ncol = ( nrow(LEAF_AREA_day)*(1440/seq_by)) )) ## on commence à 9 car debut de la meure /jour, 96 nb fof interval per day !! to adapt to other  -->
+
+<!-- rownames(val_per_interval)=rownames(LEAF_AREA_day) -->
+
+<!-- colnames(val_per_interval)= TS_seqby -->
+
+<!-- a=1 -->
+
+<!-- b= seq_by*60 -->
+
+<!-- for (i in 1:ncol(LEAF_AREA_day)) {  -->
+
+<!--   sec.lai.tmp <- as.data.frame(LEAF_AREA_day[,i]) -->
+
+<!--   colnames(sec.lai.tmp) = colnames(LEAF_AREA_day)[i] -->
+
+<!--   sec.lai.tmp = cbind(sec.lai.tmp, replicate(((1440/seq_by)-1),sec.lai.tmp)) #replicate the column LA per day * 96 interval of 15 min -->
+
+<!--   val_per_interval[a:b]= sec.lai.tmp -->
+
+<!--   # colnames(val_per_interval)[a:b]= colnames(sec.lai.tmp) -->
+
+<!--   a=a+(1440/seq_by) -->
+
+<!--   b=b+(1440/seq_by) -->
+
+<!-- } -->
+
+<!-- colnames(val_per_interval)=TS_seqby -->
+
+<!-- save(val_per_interval, file =  paste(opPATH.obj,'LA_planimeter_time_interval.RData', sep = "")) -->
+
+<!-- write.table(val_per_interval, file = paste(opPATH,"LA_planimeter_time_interval.csv", sep = ""), row.names = F, sep = ";") -->
+
+<!-- ## removed irrigation dates -->
+
+<!-- unq.dts_irrg_rvd= unq.dts[unq.dts !=  c(irrg.dts)] -->
+
+<!-- save(unq.dts_irrg_rvd, file=paste(opPATH.obj, "unq.dts_irrg_rvd.RData", sep = "")) -->
+
+<!-- ## create TS per 15 min on the entire trial except irrigation dates -->
+
+<!-- i=1 -->
+
+<!-- ## do the first day  i=1 -->
+
+<!-- start_day =  ymd_hms(paste(ymd( unq.dts_irrg_rvd[i]),as.character("00:00:00"))) -->
+
+<!-- start_day -->
+
+<!-- end_day = ymd_hms(paste(ymd( unq.dts_irrg_rvd[i]),as.character("23:45:00"))) -->
+
+<!-- end_day -->
+
+<!-- date = as.data.frame(seq(start_day,end_day, by = '15 mins')) -->
+
+<!-- TS= date -->
+
+<!-- for (i in 2:length(unq.dts_irrg_rvd)) { -->
+
+<!--   start_day =  ymd_hms(paste(ymd( unq.dts_irrg_rvd[i]),as.character("00:00:00"))) -->
+
+<!--   end_day = ymd_hms(paste(ymd( unq.dts_irrg_rvd[i]),as.character("23:45:00"))) -->
+
+<!--   date = as.data.frame(seq(start_day,end_day, by = '15 mins')) -->
+
+<!--   TS= rbind(TS, date) -->
+
+<!-- } -->
+
+<!-- TS= TS[1:nrow(TS),] -->
+
+<!-- save(TS, file =paste(opPATH.obj,  "TS_entire_trial_rmd_irrig.RData", sep = "")) -->
+
+<!-- save(val_per_interval, file=paste(opPATH.obj, "LA_planimeter_entire_trial.RData", sep = "")) -->
+
+<!-- ##val_per_interval contains values of LAI for all timepoints ( length(TS_seqby) = 2112), we want to keep only Timestamps TS,  length(TS)= 1344, with irrigation dates removed -->
+
+<!-- LA_per_interval= val_per_interval[,as.character(TS)] -->
+
+<!-- save(LA_per_interval, file=paste(opPATH.obj,"LAI_per_15min_rmd_irrig.RData", sep = "")) -->
+
+<!-- write.table(LA_per_interval, file = paste(opPATH,"LA_per_interval.csv", sep = ""), sep = ";", dec = ".") -->
+
+<!-- ``` -->
+
+<!-- ###### plot Leaf area  over time to check the profile -->
+
+<!-- ```{r plot leaf area estimated per time interval} -->
+
+<!-- data=as.data.frame(t(LA_per_interval)) -->
+
+<!-- TS=rownames(data) -->
+
+<!-- data$TS= TS -->
+
+<!-- data$TS =ymd_hms(data$TS) -->
+
+<!-- #  -->
+
+<!-- # i=1 -->
+
+<!-- for ( i in 1: ncol(data)-1) { -->
+
+<!--   png(file = paste(opPATH.profile,"LEAF_AREA/",i, "_LA_growth_estimated_over_time.png", sep = "")) -->
+
+<!--   plot<- -->
+
+<!--     ggplot(data =data, aes(x=TS))+ -->
+
+<!--     ylab("Leaf area ")+ -->
+
+<!--     xlab("Timestamp")+ -->
+
+<!--     labs(title = paste("Leaf area   ",colnames(data)[i]))+ -->
+
+<!--     geom_point(aes(y = data[,i]), color = "darkred")+ -->
+
+<!--     ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+ -->
+
+<!--     theme(axis.text.x=element_text(angle = -45, hjust = 0)) -->
+
+<!--   print(plot) -->
+
+<!--   dev.off() -->
+
+<!-- #   print(i) -->
+
+<!--  } -->
+
+<!-- ``` -->
+
+###### 13. calcul ETr NORMALIZED BY LA
+
+```{r calcul ETr  NORMALIZED BY LA }
+
+load("./saved_objects/ETr_Meta_ERRsec.rmvd.RData")
+load("./saved_objects/val_per_interval_out_rmd.RData")
+
+# removed weather col
+ETr_smth.mat = ETr_Meta_ERRsec.rmvd
+weather =ETr_smth.mat[1:8, ]
+ETr_smth.mat=ETr_Meta_ERRsec.rmvd[-c(1:8), ]
+nrow(ETr_smth.mat) ## nb LC
+
+# careful different unit sorting between la and ETr
+ETr_smth.mat$unit= as.character(ETr_smth.mat$unit)
+ETr_smth.mat = ETr_smth.mat  %>% arrange(ETr_smth.mat$unit) ### now the order of unit should be the same between LA and ETr 
+rownames(ETr_smth.mat)= ETr_smth.mat$unit
+
+meta_data= ETr_smth.mat[,1:6]
+ETr_smth.mat= ETr_smth.mat[,-c(1:6)]
+
+
+LEAF_AREA = as.data.frame(val_per_interval_out_rmd)
+rownames(LEAF_AREA) = LEAF_AREA$unit
+LEAF_AREA = LEAF_AREA[,-1] # removed unit col to match with ETr  
+
+save(LEAF_AREA, file = "./saved_objects/LEAF_AREA.RData")
+
+### normalization by LA 
+ETR_normalized= data.frame(matrix(NA, nrow = nrow(ETr_smth.mat), ncol =  ncol(ETr_smth.mat)))
+for (i in 1:nrow(ETr_smth.mat)){
+  for(j in 1:ncol(ETr_smth.mat)) {
+    
+  LA_i <-rownames(LEAF_AREA)[i]
+    ETr_i <- rownames(ETr_smth.mat)[i]
+    if (LA_i == ETr_i) { ## only if it is the same unit 
+      ETR_normalized[i, j] <- ETr_smth.mat[i,j ]/ LEAF_AREA[i,j]
+    ETR_normalized[i,j][ETR_normalized[i,j]<0]<- NA
+      
+      
+    }
+    
+  }
+  print(i)
+}
+
+TS =colnames(ETr_smth.mat)
+colnames(ETR_normalized)= TS
+LC= rownames(LEAF_AREA)
+rownames(ETR_normalized)= LC
+```
+
+```{r outliers detection on ETR_normalized values, warning=FALSE  }
+max_df=as.data.frame(colMax(ETR_normalized))
+max(max_df[1:nrow(max_df),]) 
+min_df=as.data.frame(colMin(ETR_normalized)) 
+min(min_df[1:nrow(min_df),]) 
+
+save(ETR_normalized, file = paste(opPATH.obj,"ETR_normalized_data_normalized_LA.RData", sep = ""))
+load(file = paste(opPATH.obj,"ETR_normalized_data_normalized_LA.RData", sep = ""))
+write.table(ETR_normalized, file = paste(opPATH,"ETR_normalized_by_LA.csv",sep=""), sep = ";", dec = ".")
+```
+
+```{r plot ETr NORMALIZED BY LA }
+
+
+
+
+data=as.data.frame(t(ETR_normalized))
+data$TS = rownames(data)
+data <- data[, c("TS", setdiff(names(data), "TS"))]
+
+data_num <- as.data.frame(apply(data[,2:ncol(data)], 2, as.numeric))  # Convert all variable types to numeric
+data= cbind(data[1], data_num)
+data$TS = as.POSIXct(data$TS)
+
+
+
+
+
+path_ETr_normalized_LA = "./results/profile/ETr_normalized/"
+if(!dir.exists(path_ETr_normalized_LA)) {
+  dir.create(path_ETr_normalized_LA)
+}
+
+
+for ( i in 2: ncol(data)) {
+# for ( i in 2:10) {
+  
+    safe_name = gsub(":","_",colnames(data)[i])
+
+  png(file = paste(path_ETr_normalized_LA,safe_name, ".png", sep = ""))
+
+  plot<-
+    ggplot(data =data, aes(x=data[,1], y= data[,i]))+ ## data[,1] = TS
+    
+    ylab("ET normalized (mm.time inteval min-1.m-2)") +
+    xlab("Timestamp") +
+    labs(title = paste("ET normalized by LA", safe_name)) +
+    geom_point(aes(y = data[, i]), color = "chocolate4") + 
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks = "1 days") +
+    theme(axis.text.x = element_text(angle = -45, hjust = 0))
+  
+    print(plot)
+  dev.off()
+   print(i)
+ }
+
+
+
+
+
+
+
+```
+
+```{r outliers detection ETr NORMALIZED BY LA }
+#   print(i)
+# }
+# 
+## We observed high peak that does not seem logical. It is not always the same day (not related to weather condition).  not present for all genotypes
+## Objective : removed these peaks based on max per day 
+
+
+data=as.data.frame(t(ETR_normalized))
+data$TS= TS
+data$date= date(TS)
+data$date= as.factor(data$date)
+
+## prepare dataframe unique_date used in the loop to call date and n_day
+unique_date= data.frame(matrix( nrow = length( unique(data$date)), ncol = 2))
+colnames(unique_date)=c ("n_day", "day")
+unique_date$n_day= (1:nlevels(data$date))
+unique_date$day= levels(data$date)
+unique_date$day= date( unique_date$day)
+
+## prepare dataframe max_day to store value
+max_day= data.frame(matrix(NA, nrow = length( unique(data$date)), ncol = 2)) ## create a empty dataframe to store data
+colnames(max_day)=c ("date", "max")
+max_day$max = as.numeric(max_day$max)
+max_day$date = date(max_day$date)
+
+dat_rmd= data.frame(matrix(NA, nrow = length(LC), ncol = 1)) ## create a empty dataframe to store data
+rownames(dat_rmd)=LC
+
+
+for (n in (1:(ncol(data)-2))) { # for each LC (2 last col = TS and date)
+  print(n)
+  subset_LC=data.frame(data$TS, data$date, data[n]) # create dataframe with only TS, date and LC n
+  colnames(subset_LC)= c("TS", "date", colnames(data)[n])
+  subset_LC$date = date(subset_LC$date)
+  
+  for (i in 1:nrow(unique_date) ){ # for each day
+    
+    subset_day<- subset_LC[subset_LC$date %in% c(unique_date[i,2]), ] ## create a dataframe with only one day
+    max_day[i,1]= unique_date[i,2]
+    max_day[i,2]= max(subset_day[,3])
+  }
+  ol <- boxplot(max_day$max, plot = FALSE)$out
+  tf <- which(max_day$max %in% ol)
+  date_to_rmd = max_day$date[tf]
+  date_to_rmd
+  data$date=date(subset_LC$date)
+  
+  if (length(date_to_rmd) == 0){
+    print("all days of data have been kept")
+    dat_rmd[n,] =0
+    
+  } else {
+    for (date in 1:nrow(data)) {
+      for (nday_to_rmd in 1:length(date_to_rmd)){
+        if (data$date[date]  == date_to_rmd[nday_to_rmd]) {
+          row_to_rmd=  which(data$date %in% date_to_rmd)
+          data[row_to_rmd,n]=NA
+          print(paste(length(date_to_rmd),"day(s) have been removed"))
+          dat_rmd[n,] = length(date_to_rmd)}
+      }
+    }
+  }
+}
+
+
+ETR_normalized= as.data.frame(t(data))
+ETR_normalized= ETR_normalized[-nrow(ETR_normalized),] # removed TS nd date
+ETR_normalized= ETR_normalized[-nrow(ETR_normalized),] # removed TS nd date
+
+ETR_normalized=  as.data.frame(apply(ETR_normalized, 2, as.numeric))
+rownames(ETR_normalized)= LC
+
+save(ETR_normalized, file = paste(opPATH.obj,"ETR_normalized_rmd_out.RData", sep = ""))
+```
+
+```{r plot ETr/la outliers rmd }
+
+
+
+
+data=as.data.frame(t(ETR_normalized))
+data$TS = rownames(data)
+data <- data[, c("TS", setdiff(names(data), "TS"))]
+
+data_num <- as.data.frame(apply(data[,2:ncol(data)], 2, as.numeric))  # Convert all variable types to numeric
+data= cbind(data[1], data_num)
+data$TS = as.POSIXct(data$TS)
+
+
+
+
+
+path_ETr_normalized_LA_rmd_out = "./results/profile/ETr_normalized_LA_rmd_out/"
+if(!dir.exists(path_ETr_normalized_LA_rmd_out)) {
+  dir.create(path_ETr_normalized_LA_rmd_out)
+}
+
+
+
+for ( i in 2: ncol(data)) {
+# for ( i in 2:10) {
+  
+    safe_name = gsub(":","_",colnames(data)[i])
+
+  png(file = paste(path_ETr_normalized_LA_rmd_out,safe_name, ".png", sep = ""))
+
+  plot<-
+    ggplot(data =data, aes(x=data[,1], y= data[,i]))+ ## data[,1] = TS
+    
+    ylab("ETr normalized rmd out (mm.15min-1.m-2) ")+
+    xlab("Timestamp")+
+    labs(title = paste("ET normalized by LA", safe_name)) +
+    geom_point(aes(y = data[, i]), color = "chocolate4") + 
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks = "1 days") +
+    theme(axis.text.x = element_text(angle = -45, hjust = 0))
+  
+    print(plot)
+  dev.off()
+   print(i)
+ }
+
+```
+
+###### 14. Features extraction (WORK IN PROGRESS)
+
+```{r features extraction}
+# 
+# ## remettre les dataframe  TR.mat adapté pour l'extraction de features
+# load(file = "./saved_objects/TR.mat.RData")
+#   
+# load(file = "./saved_objects/metad_emptyrows.RData")
+# metad_emptyrows[9:nrow(metad_emptyrows),] = metad_emptyrows[9:nrow(metad_emptyrows),]  %>% arrange(metad_emptyrows$unit[9:nrow(metad_emptyrows)]) ##trie par ordre croissant de nom de LC
+# 
+# ## enlever les LC manquantes :    ## removed 38:10:01 and 38:10:02 (row 854 and 855) because there are just planimeter (PE 3DLA missing data) 
+# metad_emptyrows[(854+9),]
+# metad_emptyrows[(853+9),]
+# 
+# metad_emptyrows = metad_emptyrows[-(854+9),]
+# metad_emptyrows = metad_emptyrows[-(853+9),]
+# ## add wther
+# load(file = "./saved_objects/wthr.ETref.ETobs.RData")
+# weather= wthr.ETref.ETobs[1:8,]
+# rm(wthr.ETref.ETobs)
+# 
+# ## select weather on TS saved
+# weather= weather[,as.character(TS)]
+# 
+# TR.mat= TR.mat[,-1]
+# 
+# TR.mat= rbind(weather,TR.mat) ## weather and Trans merged
+# TR.mat_metad = cbind(metad_emptyrows, TR.mat)
+
+
+## features extraction does not tolerate too much missing data. (pb to calculate model ..)
+## easy way : replace NA by 0 ... WORK IN PROGRESS
+TR.mat_rmd_NA = ETr_smth.mat
+TR.mat_rmd_out_metad= cbind(meta_data,ETr_smth.mat)
+TR.mat_rmd_out_metad= rbind(weather,TR.mat_rmd_out_metad) ## weather and Trans merged
+
+# 
+# TR.mat_rmd_NA_metad = TR.mat_rmd[is.na(TR.mat_rmd)] <- 0
+# TR.mat_rmd_out_metad = 
+# TR.mat= rbind(weather,TR.mat_rmd_out_metad) ## weather and Trans merged
+# TR.mat_rmd_out_metad= cbind(metad_emptyrows,TR.mat_rmd_out_metad)
+
+featuresRES <- getFeatures(x = TR.mat_rmd_out_metad)
+
+allFeatures <- featuresRES$allFeatures
+
+# create H2 dataframe to store H2 est. of each feature for each day
+F.He <- as.data.frame(matrix(NA, nrow = length(unq.dts), ncol = 15)) # Date-ROW, feature-COL
+colnames(F.He) <- c("maxET", "slope.maxET-6", "slope.07-maxET", "slope.00-07", "slope.19-23:45", "curvmaxET", 
+                    "total.auc","auc.10-15", "sd.10-15", "auc.prop.10-15", "auc.07-19", "sd.07-19",  
+                    "auc.prop.07-19", "auc.night", "cos.sim.index")
+rownames(F.He) <- unq.dts
+
+featureHeRES <- getFeatureHe(x = allFeatures, y = TR.mat_rmd_out_metad, d = unq.dts, p = opPATH.smth)
+write.csv(featureHeRES, paste0(opPATH, "ETr_normalized_featureH2.csv"))
+
+
+## Prepare data for 'each feature'
+maxET <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+slope.maxET.6 <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+slope.07maxET <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+slope.00.07 <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+slope.19.2345 <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+curvmaxET <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+total.auc <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+auc.10.15 <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+sd.10.15 <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+auc.prop.10.15 <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+auc.07.19 <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+sd.07.19 <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+auc.prop.07.19 <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+auc.night <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+cos.sim.index <- as.data.frame(matrix(nr = (nrow(TR.mat_rmd_out_metad)-8), nc = length(unq.dts)))
+
+for (j in 1:(nrow(TR.mat_rmd_out_metad)-8)){
+  
+  for(d in 1:length(unq.dts))
+  {maxET[j, d] <- data.frame(allFeatures[[j]][d, 1])
+  slope.maxET.6[j, d] <- data.frame(allFeatures[[j]][d, 2])
+  slope.07maxET[j, d] <- data.frame(allFeatures[[j]][d, 3])
+  slope.00.07 [j, d] <- data.frame(allFeatures[[j]][d, 4])
+  slope.19.2345[j, d] <- data.frame(allFeatures[[j]][d, 5])
+  
+  curvmaxET[j, d] <- data.frame(allFeatures[[j]][d, 6])
+  total.auc[j, d] <- data.frame(allFeatures[[j]][d, 7])
+  auc.10.15[j, d] <- data.frame(allFeatures[[j]][d, 8])
+  sd.10.15 [j, d] <- data.frame(allFeatures[[j]][d, 9])
+  auc.prop.10.15[j, d] <- data.frame(allFeatures[[j]][d, 10])
+  
+  auc.07.19[j, d] <- data.frame(allFeatures[[j]][d, 11])
+  sd.07.19[j, d] <- data.frame(allFeatures[[j]][d, 12])
+  auc.prop.07.19[j, d] <- data.frame(allFeatures[[j]][d, 13])
+  auc.night [j, d] <- data.frame(allFeatures[[j]][d, 14])
+  cos.sim.index[j, d] <- data.frame(allFeatures[[j]][d, 15])
+  }
+  
+} 
+
+names(maxET)=names(slope.maxET.6)=names(slope.07maxET)=names(slope.00.07)=names(slope.19.2345)<-unq.dts
+names(curvmaxET)=names(total.auc)=names(auc.10.15)=names(sd.10.15)=names(auc.prop.10.15)<-unq.dts
+names(auc.07.19)=names(sd.07.19)=names(auc.prop.07.19)=names(auc.night)=names(cos.sim.index)<-unq.dts
+
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], maxET)), 
+            file= paste0(opPATH.smth, "maxET.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], slope.maxET.6)), 
+            paste0(opPATH.smth, "slope.maxET.6.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], slope.00.07)), 
+            paste0(opPATH.smth, "slope.00.07.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], slope.07maxET)), 
+            paste0(opPATH.smth, "slope.07maxET.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], slope.19.2345)), 
+            paste0(opPATH.smth, "slope.19.2345.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], curvmaxET)), 
+            paste0(opPATH.smth, "curvmaxET.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], total.auc)), 
+            paste0(opPATH.smth, "total.auc.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], auc.10.15)), 
+            paste0(opPATH.smth, "auc.10.15.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], sd.10.15)), 
+            paste0(opPATH.smth, "sd.10.15.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], auc.prop.10.15)), 
+            paste0(opPATH.smth, "auc.prop.10.15.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], auc.07.19)), 
+            paste0(opPATH.smth, "auc.07.19.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], sd.07.19)), 
+            paste0(opPATH.smth, "sd.07.19.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], auc.prop.07.19)), 
+            paste0(opPATH.smth, "auc.prop.07.19.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], auc.night)), 
+            paste0(opPATH.smth, "auc.night.csv"), dec = ".", sep = ";", row.names = F)
+
+write.table(as.data.frame(cbind(TR.mat_rmd_out_metad[9:nrow(TR.mat_rmd_out_metad), 1:6], cos.sim.index)), 
+            paste0(opPATH.smth, "cos.sim.index.csv"), dec = ".", sep = ";", row.names = F)
+
+end.time <- Sys.time()
+
+# List all .RData files in the folder
+# 
+# rdata_files <- list.files(folder_path, pattern = "\\.RData$", full.names = TRUE)
+# 
+# # Remove each .RData file
+# file.remove(rdata_files)
+
+# Print a message indicating the operation is complete
+# cat("All .RData files in", folder_path, "have been deleted.\n")
+
+
+print(paste0("Complete processing executed in: ", round((end.time-st.time), 2), "minutes"))
+
+
+
+write.table(as.data.frame(TR.mat_rmd_out_metad), 
+            paste0(opPATH.smth, "TR_rate_rmd_out.csv"), dec = ".", sep = ";")
+
+
+```
+
+###### 15. calcul of LAI from LA
+
+```{r calculation of LAI }
+
+
+# Convert leaf area from cm² to m²
+LEAF_AREA_M2 <- LEAF_AREA / 10000  # 1 m² = 10,000 cm²
+
+
+platform <- readline(prompt = "What platform are you using ? Required : IRD or ICRISAT  : ") 
+
+# Set ground surface area based on platform
+if (platform == "ICRISAT") {
+  plot_area <- 0.26  # in square meters
+} else if (platform == "IRD") {
+  plot_area <- 0.09  # 30 cm x 30 cm = 900 cm² = 0.09 m²
+} else {
+  stop("Unknown platform. Please specify either 'ICRISAT' or 'IRD'.")
+}
+
+# Calculate LAI
+LAI.mat <- LEAF_AREA_M2 / plot_area
+
+
+save(LAI.mat, file = "./saved_objects/LAI.mat.RData")
+
+```
+
+###### 16. calcul of TRanspiration with Novak equation
+
+```{r TRANSPIRATION 1ST STEP Tr}
+################################ 6. TRANSPIRATION 1ST STEP Tr ############################### 
+load("./saved_objects/ETr_Meta_ERRsec.rmvd.RData")
+
+# removed weather col
+ETr_smth.mat = ETr_Meta_ERRsec.rmvd
+weather =ETr_smth.mat[1:8, ]
+ETr_smth.mat=ETr_Meta_ERRsec.rmvd[-c(1:8), ]
+nrow(ETr_smth.mat) ## nb LC
+
+# careful different unit sorting between la and ETr
+ETr_smth.mat$unit= as.character(ETr_smth.mat$unit)
+ETr_smth.mat = ETr_smth.mat  %>% arrange(ETr_smth.mat$unit) ### now the order of unit should be the same between LA and ETr 
+rownames(ETr_smth.mat)= ETr_smth.mat$unit
+
+meta_data= ETr_smth.mat[,1:6]
+ETr_smth.mat= ETr_smth.mat[,-c(1:6)]
+
+
+
+Trans.mat= data.frame(matrix(NA, nrow = nrow(ETr_smth.mat), ncol =  ncol(LAI.mat))) ### ncol 96*nombre jour 14 
+
+colnames(Trans.mat)= colnames(ETr_smth.mat)
+rownames(Trans.mat)=rownames(ETr_smth.mat)
+for (i in 1:nrow(ETr_smth.mat)){
+  if (rownames(ETr_smth.mat)[i] ==rownames(LAI.mat)[i]){
+    Trans.mat[i, ] <- (1-exp(-0.463*LAI.mat[i, ]))*ETr_smth.mat[i, ] #!! why 1-(1-)
+    print(i)
+  }
+}
+
+
+for (j in (1:ncol(Trans.mat))){ ## i col LC
+  for (i in 1:nrow(Trans.mat)) { ## j row TS
+    Trans.mat[i,j][Trans.mat[i,j]<0]<- NA   }
+  
+}
+
+
+max_df=as.data.frame(colMax(Trans.mat))
+max(max_df[1:nrow(max_df),]) #   
+min_df=as.data.frame(colMin(Trans.mat)) 
+min(min_df[1:nrow(min_df),]) #   
+
+save (Trans.mat, file = paste(opPATH.obj,"Transpiration_Trans.mat.RData", sep = ""))
+load (file = paste(opPATH.obj,"Transpiration_Trans.mat.RData", sep = ""))
+
+write.table(Trans.mat, file = paste(opPATH,"Trans.mat.csv", sep = ""), sep = ";", dec = ".")
+```
+
+```{r plot Tr VPD}
+## add VPD 
+VPD=weather[3,7:ncol(weather)]
+
+data=as.data.frame(t(Trans.mat))
+data=cbind(t(VPD), data)
+data$TS = rownames(data)
+data <- data[, c("TS", setdiff(names(data), "TS"))]
+
+data_num <- as.data.frame(apply(data[,2:ncol(data)], 2, as.numeric))  # Convert all variable types to numeric
+data= cbind(data[1], data_num)
+data$TS = as.POSIXct(data$TS)
+
+# i=1
+#for ( i in 1: ncol(data)) {
+
+
+path_Tr_VPD = "./results/profile/Tr_VPD/"
+if(!dir.exists(path_Tr_VPD)) {
+  dir.create(path_Tr_VPD)
+}
+
+
+
+for ( i in 3: ncol(data)) {
+# for ( i in 2:10) {
+  
+    safe_name = gsub(":","_",colnames(data)[i])
+
+  png(file = paste(path_Tr_VPD,safe_name, ".png", sep = ""))
+
+  plot<-
+    ggplot(data =data, aes(x=TS))+
+    geom_point(aes(y = data[,1]), color = "black")+
+    geom_point(aes(y = data[,i]*100), color = "aquamarine4")+
+    scale_y_continuous(name="VPD (kPa)", sec.axis=sec_axis(~./100, name="Transpiration (mm.15min-1)")) +
+    xlab("Timestamp")+
+    labs(title = paste("Tr (LAI~ETr ) & VPD",colnames(data)[i]))+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+#   print(i)
+# }
+# 
+
+
+
+  
+path_Tr_1 = "./results/profile/Tr_LAI-ETr/"
+if(!dir.exists(path_Tr_1)) {
+  dir.create(path_Tr_1)
+}
+
+for ( i in 3: ncol(data)) {
+    
+    
+        safe_name = gsub(":","_",colnames(data)[i])
+
+    
+  png(file = paste(path_Tr_1, safe_name, ".png", sep = ""))
+  plot<-
+    ggplot(data =data, aes(x=TS))+
+    geom_point(aes(y = data[,i]), color = "aquamarine4")+
+    ylab("Transpiration (mm.15min-1)")+
+    xlab("Timestamp")+
+    labs(title = paste("Tr (LAI~ETr )",colnames(data)[i]))+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+   print(i)
+ }
+  
+  
+  
+```
+
+```{r plot Tr 1 st step and Etr}
+### plot ETr normalized and Transpiration 
+# ETR_normalized= cbind(rownames(ETR_normalized), ETR_normalized)
+# colnames(ETR_normalized)[1]="LC"
+# rownames(ETR_normalized)= paste("ETr_norm",1:nrow(ETR_normalized), sep = "")
+
+ETr_smth.mat= cbind(rownames(ETr_smth.mat), ETr_smth.mat)
+colnames(ETr_smth.mat)[1]="LC"
+rownames(ETr_smth.mat)= paste("ETr_",1:nrow(ETr_smth.mat), sep = "")
+
+Trans.mat= cbind(rownames(Trans.mat), Trans.mat)
+colnames(Trans.mat)[1]="LC"
+rownames(Trans.mat)= paste("Trans_",1:nrow(Trans.mat), sep = "")
+
+
+## !! pour merger TR rate and Tr, on ne peut pas garde rles LC comme rownames. Rownames doivent être unique
+data_ETr_TR= rbind(ETr_smth.mat, Trans.mat)
+data_ETr_TR$LC =as.factor(data_ETr_TR$LC)
+
+levels(data_ETr_TR$LC)[1]
+
+path_ETr_TR = "./results/profile/Tr_ETr/"
+if(!dir.exists(path_ETr_TR)) {
+  dir.create(path_ETr_TR)
+}
+
+
+
+ for ( i in 1:nlevels(data_ETr_TR$LC)) {  ## for unq_LC = name LC 
+  safe_name= levels(data_ETr_TR$LC)[i]
+  subset_LC<- data_ETr_TR[data_ETr_TR$LC %in% c(safe_name), ] ## create a dataframe with data of one genotype only
+  j=rownames(subset_LC)[1]
+  j=sub("ETr", "",j)
+  subset_LC= t(subset_LC)
+  LC_name= subset_LC[1,1]
+  safe_LC_name = gsub(":","_",LC_name)
+  subset_LC= subset_LC[-1,]
+  subset_LC= as.data.frame(subset_LC)
+  subset_LC <- as.data.frame(apply(subset_LC, 2, as.numeric))
+  subset_LC$TS = ymd_hms(TS)
+  colnames(subset_LC)= c("ETr", "Transp", "TS")
+  
+  x <- subset_LC$TS  # used to draw the plot 
+  y <- subset_LC$Transp
+  y2 = subset_LC$ETr
+  
+  
+  png(file = paste(path_ETr_TR,safe_LC_name, "_ETr_and_Transp.png", sep = ""))
+  plot<-
+    ggplot(data =subset_LC, aes(x))+
+    ylab("ETr and Tr (mm.15min-1)")+
+    xlab("Timestamp")+
+    labs(title = paste("Tr (green) and ETr (brown)  ",i))+
+    geom_point(aes(y = y2), color = "chocolate4")+
+    geom_point(aes(y = y), color = "aquamarine4")+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+  print(i)
+ }
+# 
+# ### plot ETr  and Transpiration 
+# ETr_smth.mat= cbind(rownames(ETr_smth.mat), ETr_smth.mat)
+# colnames(ETr_smth.mat)[1]="LC"
+# rownames(ETr_smth.mat)= paste("ETr",1:nrow(ETr_smth.mat), sep = "")
+# 
+# Trans.mat= cbind(rownames(Trans.mat), ETr_smth.mat)
+# colnames(Trans.mat)[1]="LC"
+# rownames(Trans.mat)= paste("Trans",1:nrow(Trans.mat), sep = "")
+# 
+# 
+# ## !! pour merger TR rate and Tr, on ne peut pas garde rles LC comme rownames. Rownames doivent être unique
+# data_ETr_TR= rbind(ETr_smth.mat, Trans.mat)
+# data_ETr_TR$LC =as.factor(data_ETr_TR$LC)
+# 
+# i=levels(data_ETr_TR$LC)[1]
+# # for ( i in (levels(data_ETr_TR$LC)) ) {  ## for unq_LC = name LC 
+#   subset_LC<- data_ETr_TR[data_ETr_TR$LC %in% c(i), ] ## create a dataframe with data of one genotype only
+#   j=rownames(subset_LC)[1]
+#   j=sub("ETr", "",j)
+#   subset_LC= t(subset_LC)
+#   LC_name= subset_LC[1,1]
+#   subset_LC= subset_LC[-1,]
+#   subset_LC= as.data.frame(subset_LC)
+#   subset_LC <- as.data.frame(apply(subset_LC, 2, as.numeric))
+#   subset_LC$TS = ymd_hms(TS)
+#   colnames(subset_LC)= c("ETr", "Transp", "TS")
+#   
+#   x <- subset_LC$TS  # used to draw the plot 
+#   y <- subset_LC$Transp
+#   y2 = subset_LC$ETr
+#   
+#   
+#   png(file = paste(opPATH.profile,j, "_ETr_and_Transp.png", sep = ""))
+#   plot<-
+#     ggplot(data =subset_LC, aes(x))+
+#     ylab("ETr  and Tr (mm.15min-1)")+
+#     xlab("Timestamp")+
+#     labs(title = paste("Tr (green) and ETr norm (brown)  ",i))+
+#     geom_point(aes(y = y), color = "aquamarine4")+
+#     geom_point(aes(y = y2), color = "chocolate4")+
+#     ggplot2::scale_x_datetime(labels = scales::date_format(format = "%Y-%m-%d"), breaks  = "1 days")+
+#     theme(axis.text.x=element_text(angle = -45, hjust = 0))
+#   print(plot)
+#   dev.off()
+# #   print(i)
+# # }
+
+
+```
+
+```{r TRANSPIRATION RATE 2ND STEP}
+################################ 7. TRANSPIRATION RATE 2ND STEP  ############################### 
+rownames(Trans.mat)= Trans.mat[,1]
+Trans.mat= Trans.mat[,-1]
+
+Trans.mat <- as.data.frame(apply(Trans.mat, 2, as.numeric))
+
+
+TR.mat <- data.frame(matrix(NA, nrow = nrow(Trans.mat), ncol =  ncol(Trans.mat))) #Empty Trans Matrix
+rownames(TR.mat)= LC
+colnames(TR.mat)= TS
+
+# Calculate Transpiration Rate #
+#Kar 2020 : "The Tr values thus obtained were converted to Transpiration Rate (TR , i.e. the transpiration per unit of leaf area) by dividing Tr of each day
+#with the corresponding Observed LA (Eq.6 : TR = Tr/ ObservedLA)
+for (i in 1:nrow(TR.mat)){
+  # for (j in 1:ncol(TR.mat)) {
+  TR.mat[i, ] <- (Trans.mat[i, ]/ (LEAF_AREA[i, ]))
+  print(i)
+}
+
+for (j in (1:ncol(TR.mat))){ ## i col LC
+  for (i in 1:nrow(TR.mat)) { ## j row TS
+    TR.mat[i,j][TR.mat[i,j]<0]<- NA   }
+  
+}
+
+save(TR.mat, file = "./saved_objects/TR.mat_Transpiration_rate.RData")
+load(file = "./saved_objects/TR.mat_Transpiration_rate.RData")
+
+write.table(TR.mat, file = "TR.mat.csv", dec = ".", sep = ";")
+
+max_df=as.data.frame(colMax(TR.mat))
+max(max_df[1:nrow(max_df),])
+min_df=as.data.frame(colMin(TR.mat)) 
+min(min_df[1:nrow(min_df),])
+```
+
+```{r plot TRANSPIRATION RATE 2ND STEP}
+data=as.data.frame(t(TR.mat))
+data$TS = rownames(data)
+data <- data[, c("TS", setdiff(names(data), "TS"))]
+
+data_num <- as.data.frame(apply(data[,2:ncol(data)], 2, as.numeric))  # Convert all variable types to numeric
+data= cbind(data[1], data_num)
+data$TS = as.POSIXct(data$TS)
+
+
+
+
+
+path_TR_2= "./results/profile/path_TR_2/"
+if(!dir.exists(path_TR_2)) {
+  dir.create(path_TR_2)
+}
+
+ for ( i in 2: ncol(data)) {
+   safe_name = gsub(":","_", colnames(data)[i])
+   
+   
+  png(file = paste(path_TR_2,safe_name, ".png", sep = ""))
+  plot<-
+    ggplot(data =data, aes(x=TS))+
+    ylab("TR rate (mm.15min-1.m-2)")+
+    xlab("Timestamp")+
+    labs(title = paste("Transpiration rate ",colnames(data)[i]))+
+    geom_point(aes(y = data[,i]), color = "deeppink4")+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+  print(i)
+ }
+```
+
+```{r still high peaks to removed TRANSPIRATION RATE 2ND STEP}
+## 
+data=as.data.frame(t(TR.mat))
+rownames(data) = TS
+
+
+nrow(data)
+# data  = data[-nrow(data),]
+colnames(data)= LC
+data$TS= TS
+data$date= date(TS)
+data$date= as.factor(data$date)
+nlevels(data$date)
+
+
+## prepare dataframe unique_date used in the loop to call date and n_day
+unique_date= data.frame(matrix( nrow = length( unique(data$date)), ncol = 2))
+colnames(unique_date)=c ("n_day", "day")
+unique_date$n_day= 1:nlevels(data$date)
+unique_date$day= levels(data$date)
+unique_date$day= date( unique_date$day)
+
+## prepare dataframe max_dayto store value
+max_day= data.frame(matrix(NA, nrow = length( unique(data$date)), ncol = 2)) ## create a empty dataframe to store data
+colnames(max_day)=c ("date", "max")
+max_day$max = as.numeric(max_day$max)
+max_day$date = date(max_day$date)
+
+dat_rmd= data.frame(matrix(NA, nrow = length(LC), ncol = 1)) ## create a empty dataframe to store data
+rownames(dat_rmd)=LC
+
+
+for (n in (1:(ncol(data)-2))) { # for each LC (2 last col = TS and date)
+  print(n)
+  subset_LC=data.frame(data$TS, data$date, data[n]) # create dataframe with only TS, date and LC n 
+  colnames(subset_LC)= c("TS", "date", colnames(data)[n])
+  subset_LC$date = date(subset_LC$date)
+  
+  for (i in 1:nrow(unique_date) ){ # for each day  
+    
+    subset_day<- subset_LC[subset_LC$date %in% c(unique_date[i,2]), ] ## create a dataframe with only one day
+    max_day[i,1]= unique_date[i,2]
+    max_day[i,2]= max(subset_day[,3])
+  }
+  ol <- boxplot(max_day$max, plot = FALSE)$out
+  tf <- which(max_day$max %in% ol)
+  date_to_rmd = max_day$date[tf]
+  date_to_rmd
+  data$date=date(subset_LC$date)
+  
+  if (length(date_to_rmd) == 0){
+    print("all days of data have been kept")
+    dat_rmd[n,] =0
+    
+  } else {
+    for (date in 1:nrow(data)) {
+      for (nday_to_rmd in 1:length(date_to_rmd)){
+        if (data$date[date]  == date_to_rmd[nday_to_rmd]) {
+          row_to_rmd=  which(data$date %in% date_to_rmd)
+          data[row_to_rmd,n]=NA 
+          print(paste(length(date_to_rmd),"day(s) have been removed"))
+          dat_rmd[n,] = length(date_to_rmd)}
+      }
+    }
+  }
+}
+
+data$TS= ymd_hms(data$TS)
+
+i=2
+# for ( i in 1: ncol(data)) {
+  png(file = paste(opPATH.profile,i, "_TR.mat_rmd_out.png", sep = ""))
+  plot<-
+    ggplot(data =data, aes(x=TS))+
+    ylab("TR rate rmd out (mm.15min-1.m-2) ")+
+    xlab("Timestamp")+
+    labs(title = paste("TR rate rmd out",colnames(data)[i]))+
+    geom_point(aes(y = data[,i]), color = "chocolate4")+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%d-%m"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+#   print(i)
+# }
+  
+TR.mat_rmd= as.data.frame(t(data))
+TR.mat_rmd= TR.mat_rmd[-nrow(TR.mat_rmd),]
+TR.mat_rmd= TR.mat_rmd[-nrow(TR.mat_rmd),] # removed TS nd date 
+TR.mat_rmd=  as.data.frame(apply(TR.mat_rmd, 2, as.numeric))
+rownames(TR.mat_rmd)= LC
+
+save(TR.mat_rmd, file = "TR.mat_rmd_out.RData")
+load(TR.mat_rmd, file = "TR.mat_rmd_out.RData")
+
+write.table(TR.mat_rmd, file = "TR.mat_rmd_out.csv", sep = ";", dec = ".")
+
+## plot TRrate and Tr on the 
+
+Trans.mat= cbind(rownames(Trans.mat), Trans.mat)
+TR.mat= cbind(rownames(TR.mat), TR.mat)
+colnames(Trans.mat)[1]= "LC"
+colnames(TR.mat)[1]= "LC"
+rownames(Trans.mat)= paste("Tr",1:nrow(Trans.mat), sep = "")
+rownames(TR.mat)= paste("TR_rate",1:nrow(TR.mat), sep = "")
+
+## !! pour merger TR rate and Tr, on ne peut pas garde rles LC comme rownames. Rownames doivent être unique
+data_TRrate_TR= rbind(Trans.mat, TR.mat)
+data_TRrate_TR$LC =as.factor(data_TRrate_TR$LC)
+
+i=levels(data_TRrate_TR$LC)[1]
+# for ( i in (levels(data_TRrate_TR$LC)) ) {  ## for unq_LC = name LC 
+  subset_LC<- data_TRrate_TR[data_TRrate_TR$LC %in% c(i), ] ## create a dataframe with data of one genotype only
+  j=rownames(subset_LC)[1]
+  subset_LC= t(subset_LC)
+  LC_name= subset_LC[1,1]
+  subset_LC= subset_LC[-1,]
+  subset_LC= as.data.frame(subset_LC)
+  subset_LC <- as.data.frame(apply(subset_LC, 2, as.numeric))
+  subset_LC$TS = ymd_hms(TS)
+  colnames(subset_LC)= c("Transpiration", "TRrate", "TS")
+  
+  x <- subset_LC$TS  # used to draw the plot 
+  y <- subset_LC$Transpiration
+  y2 = subset_LC$TRrate
+  
+  
+  png(file = paste(opPATH.profile,j, "_TRrate.png", sep = ""))
+  plot<-
+    ggplot(data =subset_LC, aes(x))+
+    ylab("TRrate and Tr (mm.15min-1.m-²)")+
+    xlab("Timestamp")+
+    labs(title = paste("Tr (green) and TR rate (pink)  ",i))+
+    geom_point(aes(y = y2), color = "deeppink4")+
+    # geom_point(aes(y = y), color = "aquamarine4")+
+    ggplot2::scale_x_datetime(labels = scales::date_format(format = "%Y-%m-%d"), breaks  = "1 days")+
+    theme(axis.text.x=element_text(angle = -45, hjust = 0))
+  print(plot)
+  dev.off()
+  print(i)
+# }
+
+
+```
